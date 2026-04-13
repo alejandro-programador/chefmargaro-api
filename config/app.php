@@ -56,6 +56,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Public web base URL (XAMPP / subdirectory)
+    |--------------------------------------------------------------------------
+    |
+    | URL used for absolute links to files under public/storage (e.g. combo
+    | images). When the API lives under /api but static files are served from
+    | the project root (e.g. http://localhost/chefmargaro/...), set this to that
+    | root. Falls back to APP_URL when unset.
+    |
+    */
+
+    'public_url' => env('APP_PUBLIC_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

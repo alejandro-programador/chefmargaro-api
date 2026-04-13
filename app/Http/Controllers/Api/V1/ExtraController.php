@@ -8,6 +8,7 @@ use App\Models\Extra;
 use App\Support\BranchScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ExtraController extends Controller
 {
@@ -56,7 +57,7 @@ class ExtraController extends Controller
 
         if ($request->hasFile('image')) {
             $imagePath = $request->file('image')->store('extras', 'public');
-            $data['image_url'] = Storage::url($imagePath);
+            $data['image_url'] = '/storage/app/public/' . $imagePath;
         }
 
         $extra = Extra::create($data);
@@ -94,10 +95,16 @@ class ExtraController extends Controller
 
         if ($request->hasFile('image')) {
             if ($extra->image_url) {
-                Storage::disk('public')->delete(str_replace('/storage/', '', $extra->image_url));
+                $path = Str::after($extra->image_url, '/storage/app/public/');
+                if ($path === $extra->image_url) {
+                    $path = Str::after($extra->image_url, '/storage/');
+                }
+                if ($path !== $extra->image_url) {
+                    Storage::disk('public')->delete($path);
+                }
             }
             $imagePath = $request->file('image')->store('extras', 'public');
-            $data['image_url'] = Storage::url($imagePath);
+            $data['image_url'] = '/storage/app/public/' . $imagePath;
         }
 
         $extra->update($data);
@@ -114,7 +121,13 @@ class ExtraController extends Controller
             abort(404);
         }
         if ($extra->image_url) {
-            Storage::disk('public')->delete(str_replace('/storage/', '', $extra->image_url));
+            $path = Str::after($extra->image_url, '/storage/app/public/');
+            if ($path === $extra->image_url) {
+                $path = Str::after($extra->image_url, '/storage/');
+            }
+            if ($path !== $extra->image_url) {
+                Storage::disk('public')->delete($path);
+            }
         }
         $extra->delete();
         return response()->noContent();
