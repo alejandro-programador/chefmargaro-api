@@ -14,11 +14,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('payment_verifications', function (Blueprint $table) {
-            $table->dropForeign('fk_verification_user');
-        });
+        try {
+            Schema::table('payment_verifications', function (Blueprint $table) {
+                $table->dropForeign('fk_verification_user');
+            });
+        } catch (\Throwable) {
+            try {
+                Schema::table('payment_verifications', function (Blueprint $table) {
+                    $table->dropForeign(['verifier_id']);
+                });
+            } catch (\Throwable) {
+                // Foreign key may already be dropped from a previous failed attempt.
+            }
+        }
 
-        DB::statement('ALTER TABLE payment_verifications MODIFY verifier_id INT NULL');
+        DB::statement('ALTER TABLE payment_verifications MODIFY verifier_id BIGINT UNSIGNED NULL');
 
         Schema::table('payment_verifications', function (Blueprint $table) {
             $table->foreign('verifier_id')
@@ -33,11 +43,15 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('payment_verifications', function (Blueprint $table) {
-            $table->dropForeign(['verifier_id']);
-        });
+        try {
+            Schema::table('payment_verifications', function (Blueprint $table) {
+                $table->dropForeign(['verifier_id']);
+            });
+        } catch (\Throwable) {
+            // Nothing to drop.
+        }
 
-        DB::statement('ALTER TABLE payment_verifications MODIFY verifier_id INT NOT NULL');
+        DB::statement('ALTER TABLE payment_verifications MODIFY verifier_id BIGINT UNSIGNED NOT NULL');
 
         Schema::table('payment_verifications', function (Blueprint $table) {
             $table->foreign('verifier_id', 'fk_verification_user')

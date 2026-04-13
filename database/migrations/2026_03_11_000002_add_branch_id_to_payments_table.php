@@ -14,7 +14,7 @@ return new class extends Migration
     {
         Schema::table('payments', function (Blueprint $table) {
             if (! Schema::hasColumn('payments', 'branch_id')) {
-                $table->unsignedBigInteger('branch_id')->nullable()->after('order_id');
+                $table->unsignedInteger('branch_id')->nullable()->after('order_id');
                 $table->index('branch_id');
             }
         });
