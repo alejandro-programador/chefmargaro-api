@@ -33,6 +33,7 @@ class Combo extends Model
         'category',
         'rolls_count',
         'includes_drink',
+        'has_topping',
         'is_active',
         'branch_id',
         'image_url',
@@ -49,6 +50,7 @@ class Combo extends Model
             'price_eur' => 'decimal:2',
             'is_active' => 'boolean',
             'includes_drink' => 'boolean',
+            'has_topping' => 'boolean',
         ];
     }
 

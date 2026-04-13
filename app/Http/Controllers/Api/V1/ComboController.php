@@ -105,6 +105,7 @@ class ComboController extends Controller
             'category' => ['required', 'string', 'in:rolls-mixtos,pollo-crispy'],
             'rolls_count' => ['required_if:category,rolls-mixtos', 'nullable', 'integer', 'min:1', 'max:99'],
             'includes_drink' => ['sometimes', 'boolean'],
+            'has_topping' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
             'branch_id' => ['sometimes', 'integer', 'exists:branches,branch_id'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
@@ -112,6 +113,9 @@ class ComboController extends Controller
 
         if (($data['category'] ?? '') !== 'rolls-mixtos') {
             $data['rolls_count'] = null;
+            $data['has_topping'] = false;
+        } else {
+            $data['has_topping'] = (bool) ($data['has_topping'] ?? false);
         }
         $data['includes_drink'] = (bool) ($data['includes_drink'] ?? false);
 
@@ -152,13 +156,18 @@ class ComboController extends Controller
             'category' => ['sometimes', 'string', 'in:rolls-mixtos,pollo-crispy'],
             'rolls_count' => ['required_if:category,rolls-mixtos', 'nullable', 'integer', 'min:1', 'max:99'],
             'includes_drink' => ['sometimes', 'boolean'],
+            'has_topping' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
             'branch_id' => ['sometimes', 'integer', 'exists:branches,branch_id'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
         ]);
 
-        if (isset($data['category']) && $data['category'] !== 'rolls-mixtos') {
+        $category = $data['category'] ?? $combo->category;
+        if ($category !== 'rolls-mixtos') {
             $data['rolls_count'] = null;
+            $data['has_topping'] = false;
+        } elseif (array_key_exists('has_topping', $data)) {
+            $data['has_topping'] = (bool) $data['has_topping'];
         }
         if (array_key_exists('includes_drink', $data)) {
             $data['includes_drink'] = (bool) $data['includes_drink'];
@@ -198,9 +207,28 @@ class ComboController extends Controller
 
     public function syncExtras(Request $request, Combo $combo)
     {
-        // Note: This endpoint requires the combo_extra pivot table to be created in the database
+        $branchId = BranchScope::requestedBranchId($request);
+        if ($branchId !== null && $combo->branch_id !== null && (int) $combo->branch_id !== $branchId) {
+            abort(404);
+        }
+
+        $request->validate([
+            'extra_ids' => ['present', 'array'],
+            'extra_ids.*' => ['integer', 'exists:extras,extra_id'],
+        ]);
+
+        $extraIds = $request->input('extra_ids', []);
+        $syncData = [];
+        foreach ($extraIds as $index => $extraId) {
+            $syncData[(int) $extraId] = ['sort_order' => (int) $index];
+        }
+
+        $combo->extras()->sync($syncData);
+        $combo->load(['branch', 'extras']);
+
         return response()->json([
-            'message' => 'Combo extras sync feature requires combo_extra pivot table. Please create the table first.',
-        ], 501);
+            'message' => 'Combo extras synced successfully',
+            'data' => new ComboResource($combo),
+        ]);
     }
 }

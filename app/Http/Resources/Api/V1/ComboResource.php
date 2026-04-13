@@ -80,6 +80,7 @@ class ComboResource extends JsonResource
             'category' => $this->category,
             'rolls_count' => $this->rolls_count,
             'includes_drink' => (bool) $this->includes_drink,
+            'has_topping' => (bool) ($this->has_topping ?? false),
             'is_active' => (bool) $this->is_active,
             'image_url' => static::normalizeComboImageUrl($this->image_url),
             'branch_id' => $this->branch_id,
