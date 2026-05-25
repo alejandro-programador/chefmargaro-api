@@ -37,6 +37,9 @@ class Combo extends Model
         'is_active',
         'branch_id',
         'image_url',
+        'xetux_product_id',
+        'xetux_item_id',
+        'xetux_family_id',
     ];
 
     /**

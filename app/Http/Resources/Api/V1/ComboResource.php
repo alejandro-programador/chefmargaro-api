@@ -84,6 +84,9 @@ class ComboResource extends JsonResource
             'is_active' => (bool) $this->is_active,
             'image_url' => static::normalizeComboImageUrl($this->image_url),
             'branch_id' => $this->branch_id,
+            'xetux_product_id' => $this->xetux_product_id,
+            'xetux_item_id' => $this->xetux_item_id,
+            'xetux_family_id' => $this->xetux_family_id,
             'branch' => $this->whenLoaded('branch', function () {
                 return new BranchResource($this->branch);
             }),

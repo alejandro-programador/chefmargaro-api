@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\ComboResource;
 use App\Models\Combo;
+use App\Services\XetuxCatalogueService;
 use App\Support\BranchScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ComboController extends Controller
 {
@@ -96,7 +99,7 @@ class ComboController extends Controller
         return ComboResource::collection($query->paginate($perPage));
     }
 
-    public function store(Request $request)
+    public function store(Request $request, XetuxCatalogueService $xetux)
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -108,8 +111,11 @@ class ComboController extends Controller
             'has_topping' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
             'branch_id' => ['sometimes', 'integer', 'exists:branches,branch_id'],
+            'xetux_product_id' => ['required', 'integer', Rule::unique('combos', 'xetux_product_id')],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
         ]);
+
+        $data = array_merge($data, $this->resolveXetuxFields($xetux, (int) $data['xetux_product_id']));
 
         if (($data['category'] ?? '') !== 'rolls-mixtos') {
             $data['rolls_count'] = null;
@@ -143,7 +149,7 @@ class ComboController extends Controller
         return new ComboResource($combo);
     }
 
-    public function update(Request $request, Combo $combo)
+    public function update(Request $request, Combo $combo, XetuxCatalogueService $xetux)
     {
         $branchId = BranchScope::requestedBranchId();
         if ($branchId !== null && $combo->branch_id !== null && (int) $combo->branch_id !== $branchId) {
@@ -159,8 +165,20 @@ class ComboController extends Controller
             'has_topping' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
             'branch_id' => ['sometimes', 'integer', 'exists:branches,branch_id'],
+            'xetux_product_id' => [
+                'sometimes',
+                'integer',
+                Rule::unique('combos', 'xetux_product_id')->ignore($combo->combo_id, 'combo_id'),
+            ],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
         ]);
+
+        if (array_key_exists('xetux_product_id', $data)) {
+            $data = array_merge(
+                $data,
+                $this->resolveXetuxFields($xetux, (int) $data['xetux_product_id'], $combo->combo_id)
+            );
+        }
 
         $category = $data['category'] ?? $combo->category;
         if ($category !== 'rolls-mixtos') {
@@ -230,5 +248,35 @@ class ComboController extends Controller
             'message' => 'Combo extras synced successfully',
             'data' => new ComboResource($combo),
         ]);
+    }
+
+    /**
+     * @return array{xetux_product_id: int, xetux_item_id: int, xetux_family_id: int}
+     */
+    protected function resolveXetuxFields(
+        XetuxCatalogueService $xetux,
+        int $xetuxProductId,
+        ?int $excludeComboId = null
+    ): array {
+        $match = collect($xetux->comboLinkableProducts($excludeComboId))
+            ->firstWhere('product_id', $xetuxProductId);
+
+        if (! $match) {
+            throw ValidationException::withMessages([
+                'xetux_product_id' => ['El producto Xetux seleccionado no es válido para combos.'],
+            ]);
+        }
+
+        if ($match['is_linked']) {
+            throw ValidationException::withMessages([
+                'xetux_product_id' => ['Ese producto Xetux ya está vinculado a otro combo.'],
+            ]);
+        }
+
+        return [
+            'xetux_product_id' => $xetuxProductId,
+            'xetux_item_id' => (int) $match['item_id'],
+            'xetux_family_id' => (int) $match['family_id'],
+        ];
     }
 }

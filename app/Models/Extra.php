@@ -34,6 +34,9 @@ class Extra extends Model
         'price_eur',
         'quantity',
         'is_active',
+        'xetux_product_id',
+        'xetux_item_id',
+        'xetux_family_id',
     ];
 
     /**

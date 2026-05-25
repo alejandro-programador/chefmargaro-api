@@ -14,11 +14,15 @@ use App\Http\Controllers\Api\V1\UserRoleController;
 use App\Http\Controllers\Api\V1\UserBranchAccessController;
 use App\Http\Controllers\Api\V1\LogController;
 use App\Http\Controllers\Api\V1\PermissionController;
+use App\Http\Controllers\Api\V1\XetuxCatalogueController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     // Auth
     Route::post('auth/login', [AuthController::class, 'login']);
+
+    Route::get('xetux/catalogue/combo-products', [XetuxCatalogueController::class, 'comboProducts']);
+    Route::get('xetux/catalogue/extra-products', [XetuxCatalogueController::class, 'extraProducts']);
 
     // Branches
     Route::apiResource('branches', BranchController::class);

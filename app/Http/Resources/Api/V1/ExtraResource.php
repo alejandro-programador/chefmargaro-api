@@ -32,6 +32,9 @@ class ExtraResource extends JsonResource
             'id' => $this->extra_id,
             'extra_id' => $this->extra_id,
             'branch_id' => $this->branch_id,
+            'xetux_product_id' => $this->xetux_product_id,
+            'xetux_item_id' => $this->xetux_item_id,
+            'xetux_family_id' => $this->xetux_family_id,
             'title' => $this->title,
             'name' => $this->title, // Alias para compatibilidad con el frontend
             'description' => $this->description,

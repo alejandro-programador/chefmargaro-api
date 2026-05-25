@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -76,11 +77,26 @@ return new class extends Migration
             }
         });
 
-        Schema::table('users', function (Blueprint $table) {
-            if (Schema::hasColumn('users', 'role_id')) {
+        if (Schema::hasColumn('users', 'role_id')) {
+            DB::statement('ALTER TABLE `users` MODIFY `role_id` INT(11) NULL');
+
+            DB::statement(
+                'UPDATE `users` AS u
+                 LEFT JOIN `user_roles` AS r ON u.`role_id` = r.`role_id`
+                 SET u.`role_id` = NULL
+                 WHERE u.`role_id` IS NOT NULL AND r.`role_id` IS NULL'
+            );
+        }
+
+        if (
+            Schema::hasColumn('users', 'role_id')
+            && Schema::hasTable('user_roles')
+            && ! $this->foreignKeyExists('users', 'role_id')
+        ) {
+            Schema::table('users', function (Blueprint $table) {
                 $table->foreign('role_id')->references('role_id')->on('user_roles')->nullOnDelete();
-            }
-        });
+            });
+        }
 
         if (! Schema::hasTable('user_branch_access')) {
             Schema::create('user_branch_access', function (Blueprint $table) {
@@ -102,8 +118,11 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            if (Schema::hasColumn('users', 'role_id')) {
+            if (Schema::hasColumn('users', 'role_id') && $this->foreignKeyExists('users', 'role_id')) {
                 $table->dropForeign(['role_id']);
+            }
+
+            if (Schema::hasColumn('users', 'role_id')) {
                 $table->dropColumn('role_id');
             }
 
@@ -125,5 +144,19 @@ return new class extends Migration
         Schema::dropIfExists('permissions');
         Schema::dropIfExists('user_roles');
         Schema::dropIfExists('branches');
+    }
+
+    private function foreignKeyExists(string $table, string $column): bool
+    {
+        return DB::selectOne(
+            'SELECT CONSTRAINT_NAME
+             FROM information_schema.KEY_COLUMN_USAGE
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = ?
+               AND COLUMN_NAME = ?
+               AND REFERENCED_TABLE_NAME IS NOT NULL
+             LIMIT 1',
+            [$table, $column]
+        ) !== null;
     }
 };
