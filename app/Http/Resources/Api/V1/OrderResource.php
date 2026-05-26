@@ -25,8 +25,12 @@ class OrderResource extends JsonResource
             'total_amount' => (float) $this->total_amount,
             'payment_status' => $this->payment_status,
             'delivery_type' => $this->delivery_type,
+            'branch_id' => $this->branch_id,
+            'notes' => $this->notes,
             'order_status' => $this->order_status,
             'tracking_token' => $this->tracking_token,
+            'xetux_order_id' => $this->xetux_order_id,
+            'xetux_tracking_number' => $this->xetux_tracking_number,
             'tracking_link' => $this->tracking_token 
                 ? (rtrim(config('app.frontend_url', 'http://localhost:3000'), '/') . '/order-tracking/' . $this->tracking_token)
                 : null,

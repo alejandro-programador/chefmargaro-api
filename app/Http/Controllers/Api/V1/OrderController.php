@@ -19,7 +19,7 @@ class OrderController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Order::with(['customer', 'orderItems.product', 'orderItems.combo', 'payments']);
+        $query = Order::with(['customer', 'orderItems.product', 'orderItems.combo', 'orderItems.extra', 'payments']);
 
         $branchId = BranchScope::requestedBranchId($request);
         if ($branchId !== null) {
@@ -83,7 +83,7 @@ class OrderController extends Controller
             ]);
         }
 
-        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'payments']);
+        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'orderItems.extra', 'payments']);
 
         return response()->json([
             'message' => 'Order created successfully',
@@ -101,7 +101,7 @@ class OrderController extends Controller
             abort(404);
         }
         $order->load('customer');
-        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'payments']);
+        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'orderItems.extra', 'payments']);
         return new OrderResource($order);
     }
 
@@ -141,7 +141,7 @@ class OrderController extends Controller
         }
         $order->update($data);
 
-        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'payments']);
+        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'orderItems.extra', 'payments']);
 
         return response()->json([
             'message' => 'Order updated successfully',
@@ -215,7 +215,7 @@ class OrderController extends Controller
             ], 404);
         }
 
-        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'payments']);
+        $order->load(['customer', 'orderItems.product', 'orderItems.combo', 'orderItems.extra', 'payments']);
 
         return new OrderResource($order);
     }

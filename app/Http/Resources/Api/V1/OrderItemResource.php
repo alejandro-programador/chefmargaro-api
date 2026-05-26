@@ -25,6 +25,10 @@ class OrderItemResource extends JsonResource
             'combo' => $this->whenLoaded('combo', function () {
                 return new ComboResource($this->combo);
             }),
+            'extra_id' => $this->extra_id,
+            'extra' => $this->whenLoaded('extra', function () {
+                return new ExtraResource($this->extra);
+            }),
             'quantity' => (int) $this->quantity,
             'combinaciones' => $this->combinaciones,
             'created_at' => $this->created_at,

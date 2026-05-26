@@ -35,6 +35,9 @@ class Order extends Model
         'delivery_type',
         'order_status',
         'tracking_token',
+        'notes',
+        'xetux_order_id',
+        'xetux_tracking_number',
     ];
 
     /**

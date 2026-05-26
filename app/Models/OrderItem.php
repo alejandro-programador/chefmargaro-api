@@ -30,6 +30,7 @@ class OrderItem extends Model
         'order_id',
         'product_id',
         'combo_id',
+        'extra_id',
         'quantity',
         'combinaciones',
     ];
@@ -69,6 +70,11 @@ class OrderItem extends Model
     public function combo()
     {
         return $this->belongsTo(Combo::class, 'combo_id', 'combo_id');
+    }
+
+    public function extra()
+    {
+        return $this->belongsTo(Extra::class, 'extra_id', 'extra_id');
     }
 }
 

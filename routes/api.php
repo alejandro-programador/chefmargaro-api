@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\BranchController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CheckoutOrderController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ExtraController;
@@ -42,6 +43,8 @@ Route::prefix('v1')->group(function () {
     Route::put('combos/{combo}/extras', [ComboController::class, 'syncExtras']);
     
     // Orders
+    Route::post('checkout/xetux-preview', [CheckoutOrderController::class, 'previewXetux']);
+    Route::post('checkout', [CheckoutOrderController::class, 'store']);
     Route::apiResource('orders', OrderController::class);
     Route::post('orders/{order}/generate-tracking-link', [OrderController::class, 'generateTrackingLink']);
     
