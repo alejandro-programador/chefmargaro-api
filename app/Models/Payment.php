@@ -34,6 +34,9 @@ class Payment extends Model
         'payment_date',
         'proof_image_url',
         'reference_number',
+        'payment_reference_number',
+        'status_view_token',
+        'reported_amount',
     ];
 
     /**
@@ -45,6 +48,7 @@ class Payment extends Model
     {
         return [
             'payment_date' => 'datetime',
+            'reported_amount' => 'decimal:2',
         ];
     }
 

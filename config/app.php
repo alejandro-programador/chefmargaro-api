@@ -70,6 +70,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | API base URL (JSON endpoints)
+    |--------------------------------------------------------------------------
+    |
+    | Used when building links that call the API from static pages (e.g. webapp
+    | payment-status.html served via XAMPP while Laravel runs on :8000).
+    |
+    */
+
+    'api_url' => env('APP_API_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payment status page path
+    |--------------------------------------------------------------------------
+    |
+    | Relative path appended to APP_PUBLIC_URL when generating the public
+    | payment status URL returned by the API.
+    |
+    */
+
+    'payment_status_page_path' => env('PAYMENT_STATUS_PAGE_PATH', '/webapp/payment-status.html'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

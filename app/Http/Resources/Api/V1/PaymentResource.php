@@ -25,6 +25,8 @@ class PaymentResource extends JsonResource
             'payment_date' => $this->payment_date,
             'proof_image_url' => $this->proof_image_url,
             'reference_number' => $this->reference_number,
+            'payment_reference_number' => $this->payment_reference_number,
+            'reported_amount' => $this->reported_amount,
             'verifications' => $this->whenLoaded('verifications', function () {
                 return PaymentVerificationResource::collection($this->verifications);
             }),
