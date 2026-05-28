@@ -204,6 +204,14 @@ class PaymentController extends Controller
             $query->where('payment_method', $request->get('payment_method'));
         }
 
+        $sortBy = $request->get('sort', 'created_at');
+        $sortOrder = strtolower((string) $request->get('order', 'desc')) === 'asc' ? 'asc' : 'desc';
+        $allowedSort = ['created_at', 'payment_date', 'payment_id'];
+        if (! in_array($sortBy, $allowedSort, true)) {
+            $sortBy = 'created_at';
+        }
+        $query->orderBy($sortBy, $sortOrder);
+
         $perPage = $request->get('per_page', 15);
         $payments = $query->paginate($perPage);
 
