@@ -7,62 +7,14 @@ use App\Http\Resources\Api\V1\ComboResource;
 use App\Models\Combo;
 use App\Services\XetuxCatalogueService;
 use App\Support\BranchScope;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class ComboController extends Controller
 {
-    /**
-     * Base URL for files served by Apache/XAMPP (not under /api).
-     * When APP_URL ends with /api, public assets live one segment above.
-     */
-    protected function publicAppBaseUrl(): string
-    {
-        $base = config('app.public_url');
-        if (empty($base)) {
-            $base = config('app.url');
-        }
-        $base = rtrim((string) $base, '/');
-        if (str_ends_with($base, '/api')) {
-            $base = substr($base, 0, -4);
-        }
-
-        return $base;
-    }
-
-    /**
-     * Full public URL for a path stored on the public disk (e.g. combos/foo.png).
-     */
-    protected function publicStorageFileUrl(string $relativePathOnPublicDisk): string
-    {
-        return $this->publicAppBaseUrl().'/storage/app/public/'.$relativePathOnPublicDisk;
-    }
-
-    /**
-     * Disk-relative path (e.g. combos/foo.png) from a stored image_url.
-     */
-    protected function diskPathFromImageUrl(?string $imageUrl): ?string
-    {
-        if (! $imageUrl) {
-            return null;
-        }
-        $path = Str::after($imageUrl, '/storage/app/public/');
-        if ($path === $imageUrl) {
-            $path = Str::after($imageUrl, '/api/storage/app/public/');
-        }
-        if ($path === $imageUrl) {
-            $path = Str::after($imageUrl, '/storage/');
-        }
-        if ($path === $imageUrl) {
-            return null;
-        }
-
-        return $path;
-    }
-
     public function index(Request $request)
     {
         $query = Combo::with('branch');
@@ -127,7 +79,7 @@ class ComboController extends Controller
 
         if ($request->hasFile('image')) {
             $imagePath = $request->file('image')->store('combos', 'public');
-            $data['image_url'] = $this->publicStorageFileUrl($imagePath);
+            $data['image_url'] = PublicStorageUrl::absoluteUrl($imagePath);
         }
 
         $combo = Combo::create($data);
@@ -192,12 +144,12 @@ class ComboController extends Controller
         }
 
         if ($request->hasFile('image')) {
-            $existingPath = $this->diskPathFromImageUrl($combo->image_url);
+            $existingPath = PublicStorageUrl::diskPathFromStored($combo->image_url);
             if ($existingPath) {
                 Storage::disk('public')->delete($existingPath);
             }
             $imagePath = $request->file('image')->store('combos', 'public');
-            $data['image_url'] = $this->publicStorageFileUrl($imagePath);
+            $data['image_url'] = PublicStorageUrl::absoluteUrl($imagePath);
         }
 
         $combo->update($data);
@@ -215,7 +167,7 @@ class ComboController extends Controller
         if ($branchId !== null && $combo->branch_id !== null && (int) $combo->branch_id !== $branchId) {
             abort(404);
         }
-        $path = $this->diskPathFromImageUrl($combo->image_url);
+        $path = PublicStorageUrl::diskPathFromStored($combo->image_url);
         if ($path) {
             Storage::disk('public')->delete($path);
         }

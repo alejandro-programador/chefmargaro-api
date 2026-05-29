@@ -8,6 +8,7 @@ use App\Http\Resources\Api\V1\PaymentResource;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Support\BranchScope;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -147,7 +148,7 @@ class PaymentController extends Controller
 
         $imagePath = $request->file('proof_image')->store('payments', 'public');
         $updates = [
-            'proof_image_url' => Storage::url($imagePath),
+            'proof_image_url' => PublicStorageUrl::absoluteUrl($imagePath),
             'payment_date' => now(),
             'payment_status' => 'pending',
             'payment_method' => $validated['payment_method'],
@@ -233,7 +234,7 @@ class PaymentController extends Controller
         if ($request->hasFile('proof_image')) {
             $image = $request->file('proof_image');
             $imagePath = $image->store('payments', 'public');
-            $data['proof_image_url'] = Storage::url($imagePath);
+            $data['proof_image_url'] = PublicStorageUrl::absoluteUrl($imagePath);
         }
 
         // Handle reference number if provided

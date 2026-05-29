@@ -70,6 +70,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | XAMPP storage URL path
+    |--------------------------------------------------------------------------
+    |
+    | When true, public file URLs use /storage/app/public/... (Apache serving the
+    | project root). On standard Laravel hosting (storage:link), leave false.
+    |
+    */
+
+    'storage_xampp_path' => env('APP_STORAGE_XAMPP_PATH', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | API base URL (JSON endpoints)
     |--------------------------------------------------------------------------
     |

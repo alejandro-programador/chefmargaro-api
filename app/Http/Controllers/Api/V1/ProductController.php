@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\UpdateProductRequest;
 use App\Http\Resources\Api\V1\ProductResource;
 use App\Models\Product;
 use App\Support\BranchScope;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -65,7 +66,7 @@ class ProductController extends Controller
         if ($request->hasFile('image')) {
             $image = $request->file('image');
             $imagePath = $image->store('products', 'public');
-            $data['image_url'] = Storage::url($imagePath);
+            $data['image_url'] = PublicStorageUrl::absoluteUrl($imagePath);
         }
 
         $product = Product::create($data);
@@ -105,12 +106,15 @@ class ProductController extends Controller
         if ($request->hasFile('image')) {
             // Delete old image if exists
             if ($product->image_url) {
-                Storage::disk('public')->delete(str_replace('/storage/', '', $product->image_url));
+                $path = PublicStorageUrl::diskPathFromStored($product->image_url);
+                if ($path) {
+                    Storage::disk('public')->delete($path);
+                }
             }
             
             $image = $request->file('image');
             $imagePath = $image->store('products', 'public');
-            $data['image_url'] = Storage::url($imagePath);
+            $data['image_url'] = PublicStorageUrl::absoluteUrl($imagePath);
         }
 
         $product->update($data);
@@ -133,7 +137,10 @@ class ProductController extends Controller
         }
         // Delete image if exists
         if ($product->image_url) {
-            Storage::disk('public')->delete(str_replace('/storage/', '', $product->image_url));
+            $path = PublicStorageUrl::diskPathFromStored($product->image_url);
+            if ($path) {
+                Storage::disk('public')->delete($path);
+            }
         }
 
         $product->delete();

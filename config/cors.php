@@ -19,9 +19,9 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
-
-    'allowed_origins_patterns' => [],
+    'allowed_origins' => ($origins = array_values(array_filter(array_map('trim', explode(',', (string) env('CORS_ALLOWED_ORIGINS', 'https://admin.chefmargaro.com,https://web.chefmargaro.com,http://localhost:5173,http://localhost:3000')))))) !== []
+        ? $origins
+        : ['*'],
 
     'allowed_headers' => ['*'],
 

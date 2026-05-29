@@ -7,9 +7,9 @@ use App\Http\Resources\Api\V1\ExtraResource;
 use App\Models\Extra;
 use App\Services\XetuxCatalogueService;
 use App\Support\BranchScope;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -63,7 +63,7 @@ class ExtraController extends Controller
 
         if ($request->hasFile('image')) {
             $imagePath = $request->file('image')->store('extras', 'public');
-            $data['image_url'] = '/storage/app/public/' . $imagePath;
+            $data['image_url'] = PublicStorageUrl::absoluteUrl($imagePath);
         }
 
         $extra = Extra::create($data);
@@ -112,17 +112,12 @@ class ExtraController extends Controller
         }
 
         if ($request->hasFile('image')) {
-            if ($extra->image_url) {
-                $path = Str::after($extra->image_url, '/storage/app/public/');
-                if ($path === $extra->image_url) {
-                    $path = Str::after($extra->image_url, '/storage/');
-                }
-                if ($path !== $extra->image_url) {
-                    Storage::disk('public')->delete($path);
-                }
+            $existingPath = PublicStorageUrl::diskPathFromStored($extra->image_url);
+            if ($existingPath) {
+                Storage::disk('public')->delete($existingPath);
             }
             $imagePath = $request->file('image')->store('extras', 'public');
-            $data['image_url'] = '/storage/app/public/' . $imagePath;
+            $data['image_url'] = PublicStorageUrl::absoluteUrl($imagePath);
         }
 
         $extra->update($data);
@@ -138,14 +133,9 @@ class ExtraController extends Controller
         if ($branchId !== null && $extra->branch_id !== null && (int) $extra->branch_id !== $branchId) {
             abort(404);
         }
-        if ($extra->image_url) {
-            $path = Str::after($extra->image_url, '/storage/app/public/');
-            if ($path === $extra->image_url) {
-                $path = Str::after($extra->image_url, '/storage/');
-            }
-            if ($path !== $extra->image_url) {
-                Storage::disk('public')->delete($path);
-            }
+        $path = PublicStorageUrl::diskPathFromStored($extra->image_url);
+        if ($path) {
+            Storage::disk('public')->delete($path);
         }
         $extra->delete();
         return response()->noContent();

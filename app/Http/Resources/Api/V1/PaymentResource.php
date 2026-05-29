@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api\V1;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -23,7 +24,7 @@ class PaymentResource extends JsonResource
             'payment_method' => $this->payment_method,
             'payment_status' => $this->payment_status,
             'payment_date' => $this->payment_date,
-            'proof_image_url' => $this->proof_image_url,
+            'proof_image_url' => PublicStorageUrl::normalize($this->proof_image_url),
             'reference_number' => $this->reference_number,
             'payment_reference_number' => $this->payment_reference_number,
             'reported_amount' => $this->reported_amount,

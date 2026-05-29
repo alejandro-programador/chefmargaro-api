@@ -5,6 +5,14 @@
 
     RewriteEngine On
 
+    # CORS para imágenes /storage servidas por Apache
+    <IfModule mod_headers.c>
+        Header set Access-Control-Allow-Origin "*"
+    </IfModule>
+
+    # /storage/* sin symlink (Hostinger: exec/symlink deshabilitados en PHP)
+    RewriteRule ^storage/(.*)$ ../storage/app/public/$1 [L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]

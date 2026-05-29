@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api\V1;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -21,7 +22,8 @@ class ProductResource extends JsonResource
             'description' => $this->description,
             'is_active' => (bool) $this->is_active,
             'branch_id' => $this->branch_id,
-            'imageUrl' => $this->image_url ? asset($this->image_url) : null,
+            'imageUrl' => PublicStorageUrl::normalize($this->image_url),
+            'image_url' => PublicStorageUrl::normalize($this->image_url),
             'branch' => $this->whenLoaded('branch', function () {
                 return new BranchResource($this->branch);
             }),
