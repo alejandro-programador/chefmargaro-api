@@ -2,7 +2,6 @@
 
 namespace App\Support;
 
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -55,7 +54,16 @@ class PublicStorageUrl
             return '/storage/app/public/'.$path;
         }
 
-        return Storage::disk('public')->url($path);
+        // Build URL from config only — do not resolve Storage::disk('public') here.
+        // On shared hosting, booting the local disk may try to mkdir storage/app/public
+        // and fail with UnableToCreateDirectory when serializing API JSON.
+        $baseUrl = (string) config('filesystems.disks.public.url', '');
+
+        if ($baseUrl !== '') {
+            return rtrim($baseUrl, '/').'/'.$path;
+        }
+
+        return '/storage/'.$path;
     }
 
     public static function absoluteUrl(string $relativePathOnPublicDisk): string

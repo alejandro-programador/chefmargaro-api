@@ -5,13 +5,15 @@
 
     RewriteEngine On
 
-    # CORS para imágenes /storage servidas por Apache
+    # CORS para imágenes /storage (Apache estático o fallback Laravel)
     <IfModule mod_headers.c>
-        Header set Access-Control-Allow-Origin "*"
+        <FilesMatch "\.(?i:jpe?g|png|gif|webp|svg|ico|pdf)$">
+            Header set Access-Control-Allow-Origin "*"
+        </FilesMatch>
     </IfModule>
 
-    # /storage/* sin symlink (Hostinger: exec/symlink deshabilitados en PHP)
-    RewriteRule ^storage/(.*)$ ../storage/app/public/$1 [L]
+    # No reescribir /storage hacia ../storage (fuera de public_html → 500 en Hostinger).
+    # Usar: public_html/storage → ../storage/app/public (symlink) o ruta web /storage en routes/web.php
 
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
