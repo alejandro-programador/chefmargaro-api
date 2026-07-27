@@ -58,7 +58,6 @@ jobs:
             **/package-lock.json
             **/admin_panel/**
             **/webapp/**
-            **/api-bcv/**
             **/.vscode/**
             **/.idea/**
             **/storage/logs/**
