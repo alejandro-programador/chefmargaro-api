@@ -10,50 +10,46 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy Laravel API por FTP
+    name: Deploy Laravel API por SSH
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: 📁 Sincronizar archivos por FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          local-dir: ./
-          server-dir: domains/chefmargaro.com/public_html/api/
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/.github/**
-            **/.env
-            **/.env.*
-            !**/.env.example
-            **/vendor/**
-            **/node_modules/**
-            **/tests/**
-            **/phpunit.xml
-            **/vite.config.js
-            **/package.json
-            **/package-lock.json
-            **/admin_panel/**
-            **/webapp/**
-            **/api-bcv/**
-            **/.vscode/**
-            **/.idea/**
-            **/storage/logs/**
-            **/storage/framework/cache/data/**
-            **/storage/framework/sessions/**
-            **/storage/framework/views/**
-            **/.phpunit.result.cache
-            **/BRANCH_SCOPE.md
+      - name: Instalar rsync y sshpass
+        run: sudo apt-get update && sudo apt-get install -y rsync sshpass
+
+      - name: 📁 Sincronizar archivos por SSH (rsync)
+        env:
+          SSHPASS: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sshpass -e rsync -avz \
+            -e "ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='vendor/' \
+            --exclude='node_modules/' \
+            --exclude='admin_panel/' \
+            --exclude='webapp/' \
+            --exclude='api-bcv/' \
+            --exclude='tests/' \
+            --exclude='phpunit.xml' \
+            --exclude='vite.config.js' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='.vscode/' \
+            --exclude='.idea/' \
+            --exclude='storage/logs/' \
+            --exclude='storage/framework/cache/data/' \
+            --exclude='storage/framework/sessions/' \
+            --exclude='storage/framework/views/' \
+            --exclude='.phpunit.result.cache' \
+            --exclude='BRANCH_SCOPE.md' \
+            ./ \
+            "${{ secrets.FTP_USERNAME }}@${{ secrets.FTP_SERVER }}:domains/chefmargaro.com/public_html/api/"
 
       - name: 📦 Instalar vendor en el servidor (Composer)
         uses: appleboy/ssh-action@v1.2.0
