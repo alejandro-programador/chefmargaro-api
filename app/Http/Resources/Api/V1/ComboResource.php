@@ -37,6 +37,9 @@ class ComboResource extends JsonResource
             'extras' => $this->whenLoaded('extras', function () {
                 return ExtraResource::collection($this->extras);
             }),
+            'included_groups' => $this->whenLoaded('includedGroups', function () {
+                return ComboIncludedGroupResource::collection($this->includedGroups);
+            }),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

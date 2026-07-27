@@ -30,6 +30,7 @@ Route::prefix('v1')->group(function () {
 
     Route::get('xetux/catalogue/combo-products', [XetuxCatalogueController::class, 'comboProducts']);
     Route::get('xetux/catalogue/extra-products', [XetuxCatalogueController::class, 'extraProducts']);
+    Route::get('xetux/catalogue/included-products', [XetuxCatalogueController::class, 'includedProducts']);
 
     // Branches
     Route::apiResource('branches', BranchController::class);
@@ -47,6 +48,7 @@ Route::prefix('v1')->group(function () {
     // Combos
     Route::apiResource('combos', ComboController::class);
     Route::put('combos/{combo}/extras', [ComboController::class, 'syncExtras']);
+    Route::put('combos/{combo}/included-products', [ComboController::class, 'syncIncludedProducts']);
     
     // Orders
     Route::post('checkout/xetux-preview', [CheckoutOrderController::class, 'previewXetux']);

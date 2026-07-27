@@ -62,4 +62,23 @@ class XetuxCatalogueController extends Controller
             ], 502);
         }
     }
+
+    /**
+     * Productos Xetux asociables como incluidos en un combo (salsas / bebidas sin costo extra).
+     */
+    public function includedProducts(XetuxCatalogueService $xetux)
+    {
+        try {
+            $data = $xetux->includedLinkableProducts();
+
+            return response()->json([
+                'message' => 'Catálogo Xetux para productos incluidos en combos',
+                'data' => $data,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 502);
+        }
+    }
 }

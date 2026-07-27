@@ -9,6 +9,11 @@ return [
     'combo_family_ids' => [1, 7, 8, 9],
     'extra_family_ids' => [6, 10, 11, 13, 2, 3, 4, 5, 17],
 
+    // Productos incluidos en combos (sin costo): salsas gratuitas vs extras de salsa de pago (family 25).
+    'included_sauce_family_ids' => [24],
+    // Bebidas elegibles como incluidas en combos (aguas, té, jugos, refrescos).
+    'included_drink_family_ids' => [2, 4, 5, 30, 31],
+
     'send_url' => env(
         'XETUX_SEND_URL',
         'https://chefmargaroprueba.xetux.net.xetux.online/xspos/api/XPosXPedidos/Send'

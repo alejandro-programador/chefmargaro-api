@@ -78,6 +78,65 @@ class XetuxCatalogueService
     }
 
     /**
+     * Productos Xetux permitidos como incluidos en combos (salsas / bebidas).
+     * No aplica unicidad: el mismo producto puede asociarse a varios combos.
+     *
+     * @return array{sauces: array<int, array<string, mixed>>, drinks: array<int, array<string, mixed>>}
+     */
+    public function includedLinkableProducts(): array
+    {
+        $catalogue = $this->fetchCatalogue();
+
+        return [
+            'sauces' => $this->mapLinkableProducts(
+                $catalogue,
+                config('xetux.included_sauce_family_ids', [24]),
+                []
+            ),
+            'drinks' => $this->mapLinkableProducts(
+                $catalogue,
+                config('xetux.included_drink_family_ids', [2, 4, 5, 30, 31]),
+                []
+            ),
+        ];
+    }
+
+    /**
+     * Resuelve un producto del catálogo por productId (para validar asociaciones incluidas).
+     *
+     * @param  array<string, mixed>|null  $catalogue  Catálogo ya cargado (evita re-fetch en sync masivo)
+     * @return array{product_id: int, item_id: int, family_id: int, product_name: string, type: string}|null
+     */
+    public function resolveIncludedProduct(int $xetuxProductId, ?array $catalogue = null): ?array
+    {
+        $catalogue ??= $this->fetchCatalogue();
+        $sauceFamilies = config('xetux.included_sauce_family_ids', [24]);
+        $drinkFamilies = config('xetux.included_drink_family_ids', [2, 4, 5, 30, 31]);
+        $allowed = array_values(array_unique(array_merge($sauceFamilies, $drinkFamilies)));
+
+        $product = collect($catalogue['productList'] ?? [])
+            ->first(function ($p) use ($xetuxProductId, $allowed) {
+                return (int) ($p['productId'] ?? 0) === $xetuxProductId
+                    && in_array((int) ($p['familyId'] ?? 0), $allowed, true);
+            });
+
+        if (! $product) {
+            return null;
+        }
+
+        $familyId = (int) ($product['familyId'] ?? 0);
+        $type = in_array($familyId, $sauceFamilies, true) ? 'sauce' : 'drink';
+
+        return [
+            'product_id' => (int) ($product['productId'] ?? 0),
+            'item_id' => (int) ($product['itemId'] ?? 0),
+            'family_id' => $familyId,
+            'product_name' => (string) ($product['productName'] ?? ''),
+            'type' => $type,
+        ];
+    }
+
+    /**
      * @param  \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model>  $query
      * @return array<int, int>
      */
@@ -97,6 +156,7 @@ class XetuxCatalogueService
     protected function mapLinkableProducts(array $catalogue, array $allowedFamilies, array $linkedProductIds): array
     {
         $familiesById = collect($catalogue['familyList'] ?? [])
+            ->unique('familyId')
             ->keyBy('familyId');
 
         return collect($catalogue['productList'] ?? [])
@@ -114,6 +174,7 @@ class XetuxCatalogueService
                     'product_description' => $product['productDescription'] ?? null,
                     'family_id' => $familyId,
                     'family_name' => $family['familyName'] ?? null,
+                    'family_path' => $family['path'] ?? null,
                     'price_usd' => (float) ($product['productSalePriceBaseWithTax'] ?? 0),
                     'is_linked' => in_array($productId, $linkedProductIds, true),
                 ];

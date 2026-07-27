@@ -9,6 +9,7 @@ use App\Services\XetuxCatalogueService;
 use App\Support\BranchScope;
 use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -97,7 +98,7 @@ class ComboController extends Controller
         if ($branchId !== null && $combo->branch_id !== null && (int) $combo->branch_id !== $branchId) {
             abort(404);
         }
-        $combo->load(['branch', 'extras']);
+        $combo->load(['branch', 'extras', 'includedGroups.products']);
         return new ComboResource($combo);
     }
 
@@ -194,10 +195,89 @@ class ComboController extends Controller
         }
 
         $combo->extras()->sync($syncData);
-        $combo->load(['branch', 'extras']);
+        $combo->load(['branch', 'extras', 'includedGroups.products']);
 
         return response()->json([
             'message' => 'Combo extras synced successfully',
+            'data' => new ComboResource($combo),
+        ]);
+    }
+
+    /**
+     * Sincroniza productos incluidos (sin costo) del combo: salsas, bebidas, etc.
+     */
+    public function syncIncludedProducts(Request $request, Combo $combo, XetuxCatalogueService $xetux)
+    {
+        $branchId = BranchScope::requestedBranchId($request);
+        if ($branchId !== null && $combo->branch_id !== null && (int) $combo->branch_id !== $branchId) {
+            abort(404);
+        }
+
+        $request->validate([
+            'groups' => ['present', 'array'],
+            'groups.*.type' => ['required', 'string', 'in:sauce,drink'],
+            'groups.*.name' => ['required', 'string', 'max:100'],
+            'groups.*.max_quantity' => ['required', 'integer', 'min:1', 'max:99'],
+            'groups.*.products' => ['present', 'array', 'min:1'],
+            'groups.*.products.*.xetux_product_id' => ['required', 'integer'],
+        ]);
+
+        $groupsInput = $request->input('groups', []);
+
+        DB::transaction(function () use ($combo, $groupsInput, $xetux) {
+            $catalogue = $xetux->fetchCatalogue();
+
+            $combo->includedGroups()->delete();
+
+            foreach ($groupsInput as $groupIndex => $groupData) {
+                $groupType = $groupData['type'];
+                $group = $combo->includedGroups()->create([
+                    'type' => $groupType,
+                    'name' => $groupData['name'],
+                    'max_quantity' => (int) $groupData['max_quantity'],
+                    'sort_order' => (int) $groupIndex,
+                ]);
+
+                $seenProductIds = [];
+                foreach ($groupData['products'] as $productIndex => $productData) {
+                    $xetuxProductId = (int) $productData['xetux_product_id'];
+                    if (isset($seenProductIds[$xetuxProductId])) {
+                        continue;
+                    }
+
+                    $resolved = $xetux->resolveIncludedProduct($xetuxProductId, $catalogue);
+                    if (! $resolved) {
+                        throw ValidationException::withMessages([
+                            "groups.{$groupIndex}.products" => [
+                                "El producto Xetux {$xetuxProductId} no es válido como producto incluido.",
+                            ],
+                        ]);
+                    }
+
+                    if ($resolved['type'] !== $groupType) {
+                        throw ValidationException::withMessages([
+                            "groups.{$groupIndex}.products" => [
+                                "El producto \"{$resolved['product_name']}\" no corresponde al tipo \"{$groupType}\".",
+                            ],
+                        ]);
+                    }
+
+                    $seenProductIds[$xetuxProductId] = true;
+                    $group->products()->create([
+                        'xetux_product_id' => $resolved['product_id'],
+                        'xetux_item_id' => $resolved['item_id'],
+                        'xetux_family_id' => $resolved['family_id'],
+                        'product_name' => $resolved['product_name'],
+                        'sort_order' => (int) $productIndex,
+                    ]);
+                }
+            }
+        });
+
+        $combo->load(['branch', 'extras', 'includedGroups.products']);
+
+        return response()->json([
+            'message' => 'Productos incluidos del combo sincronizados correctamente',
             'data' => new ComboResource($combo),
         ]);
     }

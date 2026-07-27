@@ -1,0 +1,69 @@
+name: Deploy API
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Laravel API por FTP
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, curl, zip, pdo, bcmath
+          coverage: none
+          tools: composer:v2
+
+      - name: Instalar dependencias de Composer (producción)
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+
+      - name: Preparar vendor para el deploy FTP
+        run: |
+          # vendor está en .gitignore; forzarlo para que FTP-Deploy lo suba
+          git add -f vendor
+
+      - name: 📁 Sincronizar archivos por FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./
+          server-dir: domains/chefmargaro.com/public_html/api/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github/**
+            **/.env
+            **/.env.*
+            !**/.env.example
+            **/node_modules/**
+            **/tests/**
+            **/phpunit.xml
+            **/vite.config.js
+            **/package.json
+            **/package-lock.json
+            **/admin_panel/**
+            **/webapp/**
+            **/api-bcv/**
+            **/.vscode/**
+            **/.idea/**
+            **/storage/logs/**
+            **/storage/framework/cache/data/**
+            **/storage/framework/sessions/**
+            **/storage/framework/views/**
+            **/.phpunit.result.cache
+            **/BRANCH_SCOPE.md

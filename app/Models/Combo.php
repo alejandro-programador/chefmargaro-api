@@ -82,5 +82,14 @@ class Combo extends Model
             ->withPivot('sort_order')
             ->orderBy('sort_order');
     }
+
+    /**
+     * Grupos de productos incluidos (sin costo) asociados al combo.
+     */
+    public function includedGroups()
+    {
+        return $this->hasMany(ComboIncludedGroup::class, 'combo_id', 'combo_id')
+            ->orderBy('sort_order');
+    }
 }
 
