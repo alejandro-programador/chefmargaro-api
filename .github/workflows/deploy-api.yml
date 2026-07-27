@@ -28,8 +28,11 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
           port: 21
+          security: loose
+          timeout: 60000
           local-dir: ./
-          server-dir: domains/chefmargaro.com/public_html/api/
+          # Ruta absoluta desde el home FTP (como en FileZilla)
+          server-dir: /domains/chefmargaro.com/public_html/api/
           exclude: |
             **/.git*
             **/.git*/**
