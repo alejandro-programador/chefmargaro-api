@@ -8,7 +8,9 @@ use App\Http\Resources\Api\V1\OrderResource;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Services\XetuxOrderService;
+use App\Support\PublicStorageUrl;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -40,7 +42,7 @@ class CheckoutOrderController extends Controller
         $xetuxPayload = null;
 
         try {
-            $order = DB::transaction(function () use ($data, $xetuxOrders, &$xetuxPayload) {
+            $order = DB::transaction(function () use ($data, $request, $xetuxOrders, &$xetuxPayload) {
                 $customer = $this->resolveCustomer($data);
                 $cartLines = $xetuxOrders->resolveCartLines($data['cart_lines']);
 
@@ -63,6 +65,8 @@ class CheckoutOrderController extends Controller
                 foreach ($cartLines as $line) {
                     $this->createOrderItem($order->order_id, $line);
                 }
+
+                $this->storeCheckoutPayment($order, $data, $request);
 
                 $xetuxPayload = $xetuxOrders->buildPayload(
                     $order,
@@ -208,5 +212,35 @@ class CheckoutOrderController extends Controller
         }
 
         OrderItem::create($item);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    protected function storeCheckoutPayment(Order $order, array $data, StoreCheckoutOrderRequest $request): void
+    {
+        $method = $data['payment_method'] ?? null;
+        if (! is_string($method) || $method === '') {
+            return;
+        }
+
+        $proofUrl = null;
+        if ($request->hasFile('proof_image')) {
+            $imagePath = $request->file('proof_image')->store('payments', 'public');
+            $proofUrl = PublicStorageUrl::absoluteUrl($imagePath);
+        }
+
+        $reference = isset($data['reference_number']) ? trim((string) $data['reference_number']) : '';
+
+        Payment::create([
+            'order_id' => $order->order_id,
+            'branch_id' => $data['branch_id'],
+            'payment_method' => $method,
+            'payment_status' => 'pending',
+            'payment_date' => now(),
+            'proof_image_url' => $proofUrl,
+            'payment_reference_number' => $method === 'mobile_payment' && $reference !== '' ? $reference : null,
+            'reported_amount' => $data['total_amount'],
+        ]);
     }
 }

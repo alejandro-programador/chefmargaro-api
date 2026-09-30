@@ -3,12 +3,27 @@
 namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreCheckoutOrderRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $payload = $this->input('payload');
+
+        if (is_string($payload) && $payload !== '') {
+            $decoded = json_decode($payload, true);
+            $payload = is_array($decoded) ? $decoded : null;
+        }
+
+        if (is_array($payload)) {
+            $this->merge($payload);
+        }
     }
 
     public function rules(): array
@@ -38,6 +53,9 @@ class StoreCheckoutOrderRequest extends FormRequest
             'cart_lines.*.combinaciones' => ['nullable', 'array'],
             'cart_lines.*.rollsConSesamo' => ['nullable', 'boolean'],
             'cart_lines.*.rollsConQuesoCremaCebollin' => ['nullable', 'boolean'],
+            'payment_method' => ['nullable', 'string', Rule::in(['cash', 'bank_transfer', 'mobile_payment'])],
+            'reference_number' => ['nullable', 'string', 'max:12'],
+            'proof_image' => ['nullable', 'image', 'max:5120'],
         ];
     }
 }
