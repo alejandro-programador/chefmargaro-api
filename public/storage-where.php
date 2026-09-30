@@ -20,13 +20,21 @@ $dirs = [
 
 $cacheDir = $root.'/bootstrap/cache';
 $cache = [];
+$removed = [];
 foreach (glob($cacheDir.'/*.php') ?: [] as $cacheFile) {
-    $cache[] = basename($cacheFile);
+    $base = basename($cacheFile);
+    $cache[] = $base;
+    if (str_starts_with($base, 'routes')) {
+        if (@unlink($cacheFile)) {
+            $removed[] = $base;
+        }
+    }
 }
 
 $out = [
     'root' => $root,
     'cache_php' => $cache,
+    'removed_route_cache' => $removed,
     'dirs' => [],
 ];
 
