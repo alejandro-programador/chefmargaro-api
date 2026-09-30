@@ -330,10 +330,24 @@ class XetuxOrderService
 
     protected function generateXetuxOrderId(int $localOrderId): int
     {
-        $base = (int) (now()->format('ymd').str_pad((string) ($localOrderId % 10000), 4, '0', STR_PAD_LEFT));
-        $suffix = random_int(10, 99);
+        // Xetux guarda orders[].id como int de 32 bits: debe ser menor a 2147483648.
+        // Un dígito de año + MMDD + 4 dígitos de la orden local cabe siempre en ese rango.
+        $max = 2147483647;
+        $sequence = abs($localOrderId) % 10000;
+        $yearDigit = ((int) now()->format('y')) % 10;
+        $id = (int) sprintf(
+            '%d%02d%02d%04d',
+            $yearDigit,
+            (int) now()->format('n'),
+            (int) now()->format('j'),
+            $sequence
+        );
 
-        return (int) ($base * 100 + $suffix);
+        if ($id < 1 || $id > $max) {
+            $id = (abs($localOrderId) % $max) ?: 1;
+        }
+
+        return $id;
     }
 
     protected function generateTrackingCode(): string
