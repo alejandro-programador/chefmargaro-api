@@ -34,7 +34,97 @@ class XetuxCatalogueService
             throw new RuntimeException('Respuesta inválida del catálogo de Xetux.');
         }
 
-        return $payload;
+        return $this->normalizeCatalogue($payload);
+    }
+
+    /**
+     * El gateway actual responde { data: { families, products } }.
+     * El resto del servicio sigue leyendo familyList / productList del POS anterior.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function normalizeCatalogue(array $payload): array
+    {
+        if (isset($payload['productList']) || isset($payload['familyList'])) {
+            return $payload;
+        }
+
+        $data = isset($payload['products']) && is_array($payload['products'])
+            ? $payload
+            : ($payload['data'] ?? null);
+
+        if (! is_array($data) || ! isset($data['products']) || ! is_array($data['products'])) {
+            return $payload;
+        }
+
+        $families = collect($data['families'] ?? [])
+            ->map(function ($family) {
+                $id = (int) ($family['id'] ?? $family['familyId'] ?? 0);
+
+                return [
+                    'familyId' => $id,
+                    'familyName' => (string) ($family['name'] ?? $family['familyName'] ?? ''),
+                    'path' => (string) ($family['familyTree'] ?? $family['path'] ?? $family['name'] ?? ''),
+                ];
+            })
+            ->filter(fn ($family) => $family['familyId'] > 0)
+            ->unique('familyId')
+            ->values()
+            ->all();
+
+        $products = collect($data['products'])
+            ->map(function ($product) {
+                $productId = (int) ($product['id'] ?? $product['productId'] ?? 0);
+
+                return [
+                    'productId' => $productId,
+                    'itemId' => (int) ($product['itemId'] ?? $productId),
+                    'itemCode' => $product['sku'] ?? $product['itemCode'] ?? null,
+                    'productName' => (string) ($product['name'] ?? $product['productName'] ?? ''),
+                    'productDescription' => $product['description'] ?? $product['productDescription'] ?? null,
+                    'familyId' => (int) ($product['familyId'] ?? 0),
+                    'productSalePriceBaseWithTax' => (float) (
+                        $product['productSalePriceBaseWithTax']
+                        ?? $product['priceNet']
+                        ?? 0
+                    ),
+                ];
+            })
+            ->filter(fn ($product) => $product['productId'] > 0)
+            ->unique('productId')
+            ->values()
+            ->all();
+
+        $removablesById = collect($data['removables'] ?? [])
+            ->keyBy(fn ($removable) => (string) ($removable['id'] ?? ''));
+
+        $ingredients = collect($data['productRemovables'] ?? [])
+            ->groupBy(fn ($row) => (int) ($row['productId'] ?? 0))
+            ->map(function ($rows, $productId) use ($removablesById) {
+                return [
+                    'productId' => (int) $productId,
+                    'ingredientList' => collect($rows)->map(function ($row) use ($removablesById) {
+                        $removableId = (string) ($row['removableId'] ?? '');
+                        $removable = $removablesById->get($removableId);
+
+                        return [
+                            'ingredientId' => (int) ($row['removableId'] ?? 0),
+                            'ingredientName' => (string) ($removable['name'] ?? ''),
+                        ];
+                    })->values()->all(),
+                ];
+            })
+            ->filter(fn ($row) => $row['productId'] > 0)
+            ->values()
+            ->all();
+
+        return array_merge($payload, [
+            'familyList' => $families,
+            'productList' => $products,
+            'categoryList' => $data['categories'] ?? ($payload['categoryList'] ?? []),
+            'removibleIngredientList' => $ingredients,
+        ]);
     }
 
     /**
