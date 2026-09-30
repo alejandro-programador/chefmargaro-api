@@ -49,5 +49,30 @@ foreach ($dirs as $dir) {
     ];
 }
 
+$web = $root.'/routes/web.php';
+$out['web_php'] = [
+    'exists' => is_file($web),
+    'mtime' => is_file($web) ? date('c', filemtime($web)) : null,
+    'has_storage_route' => is_file($web) && str_contains((string) file_get_contents($web), "storage/{path}"),
+];
+$comboFile = $root.'/storage/app/public/combos/'.$file;
+$out['combo_file'] = [
+    'path' => $comboFile,
+    'is_file' => is_file($comboFile),
+    'size' => is_file($comboFile) ? filesize($comboFile) : null,
+];
+
+require $root.'/vendor/autoload.php';
+$app = require $root.'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$uris = [];
+foreach ($app->make('router')->getRoutes() as $route) {
+    $uri = $route->uri();
+    if (str_contains($uri, 'storage')) {
+        $uris[] = $uri;
+    }
+}
+$out['storage_routes'] = $uris;
+
 header('Content-Type: application/json; charset=utf-8');
 echo json_encode($out, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
