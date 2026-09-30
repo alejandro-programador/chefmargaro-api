@@ -17,7 +17,6 @@ class XetuxExtraCatalogueTest extends TestCase
         config([
             'xetux.api_key' => 'test-key',
             'xetux.catalogue_url' => 'https://xetux.test/catalog',
-            'xetux.extra_family_ids' => [2, 27],
         ]);
 
         Schema::dropIfExists('extras');
@@ -51,7 +50,15 @@ class XetuxExtraCatalogueTest extends TestCase
             fn ($product) => $product['family_name'] === 'Complementos'
                 && $product['product_name'] === 'WASABI Y GENGIBRE'
         ));
-        $this->assertFalse($products->contains(
+        $this->assertTrue($products->contains(
+            fn ($product) => $product['family_name'] === 'Postres'
+                && $product['product_name'] === 'BROWNIE CHOCO CHOCO X UNID'
+        ));
+        $ketchup = $products->firstWhere('product_id', 73);
+        $this->assertNotNull($ketchup);
+        $this->assertSame('EXTRA DE SALSA KETCHUP', $ketchup['product_name']);
+        $this->assertSame('Extra Salsa', $ketchup['family_name']);
+        $this->assertTrue($products->contains(
             fn ($product) => $product['product_name'] === '10 ROLLS ESPECIALES'
         ));
     }
@@ -123,6 +130,18 @@ class XetuxExtraCatalogueTest extends TestCase
                         'familyTree' => 'Rolls',
                         'comboOnly' => false,
                     ],
+                    [
+                        'id' => '6',
+                        'name' => 'Postres',
+                        'familyTree' => 'Postres',
+                        'comboOnly' => false,
+                    ],
+                    [
+                        'id' => '25',
+                        'name' => 'Extra Salsa',
+                        'familyTree' => 'Acompañantes/Extra Salsa',
+                        'comboOnly' => false,
+                    ],
                 ],
                 'products' => [
                     [
@@ -150,9 +169,29 @@ class XetuxExtraCatalogueTest extends TestCase
                         'name' => '10 ROLLS ESPECIALES',
                         'sku' => 'XROLL',
                         'familyId' => '1',
-                        'description' => 'Rolls',
+                        'description' => '10 ROLLS ESPECIALES',
                         'priceNet' => '10',
                         'combo' => true,
+                        'comboOnly' => false,
+                    ],
+                    [
+                        'id' => '76',
+                        'name' => 'BROWNIE CHOCO CHOCO X UNID',
+                        'sku' => 'XPBOD2603000010',
+                        'familyId' => '6',
+                        'description' => 'BROWNIE CHOCO CHOCO X UNID',
+                        'priceNet' => '1.29',
+                        'combo' => false,
+                        'comboOnly' => false,
+                    ],
+                    [
+                        'id' => '73',
+                        'name' => 'EXTRA SALSA DE ANGUILA',
+                        'sku' => 'XPRO2603000055',
+                        'familyId' => '25',
+                        'description' => 'EXTRA DE SALSA KETCHUP',
+                        'priceNet' => '0.43',
+                        'combo' => false,
                         'comboOnly' => false,
                     ],
                 ],

@@ -148,7 +148,7 @@ class XetuxCatalogueService
     }
 
     /**
-     * Productos Xetux permitidos para vincular extras.
+     * Todos los productos del catálogo Xetux actual, sin lista fija de familias.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -162,26 +162,9 @@ class XetuxCatalogueService
 
         return $this->mapLinkableProducts(
             $this->fetchCatalogue(),
-            $this->extraFamilyIds(),
+            null,
             $linkedIds
         );
-    }
-
-    /**
-     * Familias vendibles como extra. Se unen a la config para que un caché viejo
-     * no oculte acompañantes como Complementos (Wakame).
-     *
-     * @return array<int, int>
-     */
-    protected function extraFamilyIds(): array
-    {
-        $configured = config('xetux.extra_family_ids', []);
-        $required = [2, 3, 4, 5, 6, 10, 11, 13, 17, 18, 20, 24, 25, 27, 28, 30, 31];
-
-        return array_values(array_unique(array_map(
-            'intval',
-            array_merge(is_array($configured) ? $configured : [], $required)
-        )));
     }
 
     /**
@@ -257,31 +240,40 @@ class XetuxCatalogueService
     }
 
     /**
+     * @param  array<int, int>|null  $allowedFamilies  null = todos los productos del catálogo
      * @param  array<int, int>  $linkedProductIds
      * @return array<int, array<string, mixed>>
      */
-    protected function mapLinkableProducts(array $catalogue, array $allowedFamilies, array $linkedProductIds): array
+    protected function mapLinkableProducts(array $catalogue, ?array $allowedFamilies, array $linkedProductIds): array
     {
         $familiesById = collect($catalogue['familyList'] ?? [])
             ->unique('familyId')
             ->keyBy('familyId');
 
         return collect($catalogue['productList'] ?? [])
-            ->filter(fn ($product) => in_array((int) ($product['familyId'] ?? 0), $allowedFamilies, true))
+            ->filter(function ($product) use ($allowedFamilies) {
+                if ($allowedFamilies === null) {
+                    return true;
+                }
+
+                return in_array((int) ($product['familyId'] ?? 0), $allowedFamilies, true);
+            })
             ->map(function ($product) use ($familiesById, $linkedProductIds) {
                 $familyId = (int) ($product['familyId'] ?? 0);
                 $productId = (int) ($product['productId'] ?? 0);
                 $family = $familiesById->get($familyId);
+                $description = trim((string) ($product['productDescription'] ?? ''));
+                $name = trim((string) ($product['productName'] ?? ''));
 
                 return [
                     'product_id' => $productId,
                     'item_id' => (int) ($product['itemId'] ?? 0),
                     'item_code' => $product['itemCode'] ?? null,
-                    'product_name' => $product['productName'] ?? '',
+                    'product_name' => $description !== '' ? $description : $name,
                     'product_description' => $product['productDescription'] ?? null,
                     'family_id' => $familyId,
-                    'family_name' => $family['familyName'] ?? null,
-                    'family_path' => $family['path'] ?? null,
+                    'family_name' => is_array($family) ? ($family['familyName'] ?? null) : null,
+                    'family_path' => is_array($family) ? ($family['path'] ?? null) : null,
                     'price_usd' => (float) ($product['productSalePriceBaseWithTax'] ?? 0),
                     'is_linked' => in_array($productId, $linkedProductIds, true),
                 ];
