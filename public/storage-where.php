@@ -24,7 +24,7 @@ $removed = [];
 foreach (glob($cacheDir.'/*.php') ?: [] as $cacheFile) {
     $base = basename($cacheFile);
     $cache[] = $base;
-    if (str_starts_with($base, 'routes')) {
+    if (str_starts_with($base, 'routes') || $base === 'config.php') {
         if (@unlink($cacheFile)) {
             $removed[] = $base;
         }

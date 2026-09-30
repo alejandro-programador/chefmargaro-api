@@ -33,7 +33,9 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // No servir este disco en /storage: esa URL es de las imágenes públicas
+            // (storage/app/public). Con serve=true Laravel exige firma y responde 404.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],
