@@ -14,6 +14,7 @@ class StoreCheckoutOrderRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        // El checkout envía el pedido como JSON en el campo multipart "payload".
         $payload = $this->input('payload');
 
         if (is_string($payload) && $payload !== '') {
