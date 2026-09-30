@@ -72,9 +72,26 @@ class XetuxCatalogueService
 
         return $this->mapLinkableProducts(
             $this->fetchCatalogue(),
-            config('xetux.extra_family_ids', [6, 10, 11, 13, 2, 3, 4, 5, 17]),
+            $this->extraFamilyIds(),
             $linkedIds
         );
+    }
+
+    /**
+     * Familias vendibles como extra. Se unen a la config para que un caché viejo
+     * no oculte acompañantes como Complementos (Wakame).
+     *
+     * @return array<int, int>
+     */
+    protected function extraFamilyIds(): array
+    {
+        $configured = config('xetux.extra_family_ids', []);
+        $required = [2, 3, 4, 5, 6, 10, 11, 13, 17, 18, 20, 24, 25, 27, 28, 30, 31];
+
+        return array_values(array_unique(array_map(
+            'intval',
+            array_merge(is_array($configured) ? $configured : [], $required)
+        )));
     }
 
     /**

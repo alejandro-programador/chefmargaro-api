@@ -7,7 +7,9 @@ return [
     ),
     'api_key' => env('XETUX_API_KEY'),
     'combo_family_ids' => [1, 7, 8, 9],
-    'extra_family_ids' => [6, 10, 11, 13, 2, 3, 4, 5, 17],
+    // Aguas, té, jugos, postres, raciones, topping, café, guarniciones,
+    // cervezas, salsas, extra salsa, complementos (wakame), extra topping y refrescos.
+    'extra_family_ids' => [2, 3, 4, 5, 6, 10, 11, 13, 17, 18, 20, 24, 25, 27, 28, 30, 31],
 
     // Productos incluidos en combos (sin costo): salsas gratuitas vs extras de salsa de pago (family 25).
     'included_sauce_family_ids' => [24],
