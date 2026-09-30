@@ -31,6 +31,7 @@ Route::prefix('v1')->group(function () {
     Route::get('xetux/catalogue/combo-products', [XetuxCatalogueController::class, 'comboProducts']);
     Route::get('xetux/catalogue/extra-products', [XetuxCatalogueController::class, 'extraProducts']);
     Route::get('xetux/catalogue/included-products', [XetuxCatalogueController::class, 'includedProducts']);
+    Route::get('xetux/catalogue/roll-combination-options', [XetuxCatalogueController::class, 'rollCombinationOptions']);
 
     // Branches
     Route::apiResource('branches', BranchController::class);

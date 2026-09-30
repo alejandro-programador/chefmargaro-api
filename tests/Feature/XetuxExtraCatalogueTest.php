@@ -78,6 +78,49 @@ class XetuxExtraCatalogueTest extends TestCase
         $this->assertSame(133, $sesamo['ingredientList'][0]['ingredientId']);
     }
 
+    public function test_roll_combination_options_come_from_catalogue_categories(): void
+    {
+        Http::fake([
+            'xetux.test/*' => Http::response([
+                'success' => true,
+                'data' => [
+                    'families' => [],
+                    'products' => [],
+                    'categories' => [
+                        ['id' => '1', 'name' => 'TEXTURA'],
+                        ['id' => '2', 'name' => 'PROTEINA ROLLS ESPECIALES'],
+                        ['id' => '3', 'name' => 'COMPLEMENTOS'],
+                        ['id' => '5', 'name' => 'SABOR'],
+                    ],
+                    'additionals' => [
+                        ['id' => '1', 'name' => 'FRIOS'],
+                        ['id' => '14', 'name' => 'COMBINADO'],
+                        ['id' => '3', 'name' => 'SOLO ATUN'],
+                        ['id' => '8', 'name' => 'CON TODO'],
+                        ['id' => '20', 'name' => 'CHOCOLATE'],
+                    ],
+                    'additionalCategories' => [
+                        ['groupId' => '1', 'optionId' => '14', 'position' => 1],
+                        ['groupId' => '1', 'optionId' => '1', 'position' => 2],
+                        ['groupId' => '2', 'optionId' => '3', 'position' => 1],
+                        ['groupId' => '3', 'optionId' => '8', 'position' => 1],
+                        ['groupId' => '5', 'optionId' => '20', 'position' => 1],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $response = $this->getJson('/api/v1/xetux/catalogue/roll-combination-options');
+
+        $response->assertOk();
+        $this->assertSame(
+            ['COMBINADO', 'FRIOS'],
+            collect($response->json('data.texturas'))->pluck('name')->all()
+        );
+        $this->assertSame(['SOLO ATUN'], collect($response->json('data.proteinas'))->pluck('name')->all());
+        $this->assertSame(['CON TODO'], collect($response->json('data.complementos'))->pluck('name')->all());
+    }
+
     public function test_legacy_catalogue_shape_still_lists_wakame(): void
     {
         Http::fake([

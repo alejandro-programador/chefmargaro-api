@@ -128,6 +128,87 @@ class XetuxCatalogueService
     }
 
     /**
+     * Texturas, proteínas y complementos del catálogo actual (categorías Xetux).
+     *
+     * @return array{texturas: array<int, array{id: int, name: string}>, proteinas: array<int, array{id: int, name: string}>, complementos: array<int, array{id: int, name: string}>}
+     */
+    public function rollCombinationOptions(): array
+    {
+        $catalogue = $this->fetchCatalogue();
+        $data = is_array($catalogue['data'] ?? null) ? $catalogue['data'] : [];
+
+        $categories = collect($data['categories'] ?? $catalogue['categoryList'] ?? []);
+        $additionals = collect($data['additionals'] ?? $catalogue['additionalList'] ?? [])
+            ->keyBy(fn ($additional) => (string) ($additional['id'] ?? $additional['additionalId'] ?? ''));
+        $links = collect($data['additionalCategories'] ?? $catalogue['additionalCategoryList'] ?? []);
+
+        $buckets = [
+            'texturas' => [],
+            'proteinas' => [],
+            'complementos' => [],
+        ];
+
+        $categoriesById = $categories->keyBy(fn ($category) => (string) ($category['id'] ?? $category['categoryId'] ?? ''));
+
+        foreach ($links as $link) {
+            $category = $categoriesById->get((string) ($link['groupId'] ?? $link['categoryId'] ?? ''));
+            $categoryName = is_array($category)
+                ? (string) ($category['name'] ?? $category['categoryName'] ?? '')
+                : '';
+            $bucket = $this->rollOptionBucket($categoryName);
+            if ($bucket === null) {
+                continue;
+            }
+
+            $additional = $additionals->get((string) ($link['optionId'] ?? $link['additionalId'] ?? ''));
+            $name = is_array($additional)
+                ? trim((string) ($additional['name'] ?? $additional['additionalName'] ?? ''))
+                : trim((string) ($link['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $buckets[$bucket][] = [
+                'id' => (int) ($additional['id'] ?? $link['optionId'] ?? 0),
+                'name' => $name,
+                'position' => (int) ($link['position'] ?? 0),
+            ];
+        }
+
+        return collect($buckets)->map(function ($items) {
+            return collect($items)
+                ->unique('name')
+                ->sortBy('position')
+                ->map(fn ($item) => [
+                    'id' => $item['id'],
+                    'name' => $item['name'],
+                ])
+                ->values()
+                ->all();
+        })->all();
+    }
+
+    protected function rollOptionBucket(string $categoryName): ?string
+    {
+        $name = strtoupper(strtr($categoryName, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+            'á' => 'A', 'é' => 'E', 'í' => 'I', 'ó' => 'O', 'ú' => 'U',
+        ]));
+
+        if (str_contains($name, 'TEXTURA')) {
+            return 'texturas';
+        }
+        if (str_contains($name, 'PROTEINA')) {
+            return 'proteinas';
+        }
+        if (str_contains($name, 'COMPLEMENTO')) {
+            return 'complementos';
+        }
+
+        return null;
+    }
+
+    /**
      * Productos Xetux permitidos para vincular combos (familias 1, 7, 8, 9).
      *
      * @return array<int, array<string, mixed>>

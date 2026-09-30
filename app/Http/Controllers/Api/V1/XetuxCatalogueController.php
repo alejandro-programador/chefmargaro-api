@@ -64,6 +64,23 @@ class XetuxCatalogueController extends Controller
     }
 
     /**
+     * Textura, proteína y complemento para armar combinaciones de rolls.
+     */
+    public function rollCombinationOptions(XetuxCatalogueService $xetux)
+    {
+        try {
+            return response()->json([
+                'message' => 'Opciones de combinación de rolls',
+                'data' => $xetux->rollCombinationOptions(),
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 502);
+        }
+    }
+
+    /**
      * Productos Xetux asociables como incluidos en un combo (salsas / bebidas sin costo extra).
      */
     public function includedProducts(XetuxCatalogueService $xetux)
