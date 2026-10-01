@@ -506,6 +506,9 @@ class XetuxOrderService
                 if ($combo) {
                     $line['xetux_product_id'] = $combo->xetux_product_id;
                     $line['xetux_item_id'] = $combo->xetux_item_id;
+                    if (is_string($combo->name) && $combo->name !== '') {
+                        $line['name'] = $combo->name;
+                    }
                 }
                 $line['combinaciones'] = $this->mergeIncludedSelections(
                     is_array($line['combinaciones'] ?? null) ? $line['combinaciones'] : [],

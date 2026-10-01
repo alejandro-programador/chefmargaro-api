@@ -285,6 +285,8 @@ class PaymentController extends Controller
             'reported_amount' => ['nullable', 'numeric', 'min:0.01'],
         ]);
 
+        $previousStatus = $payment->payment_status;
+
         $payment->update($request->only([
             'order_id',
             'payment_method',
@@ -293,6 +295,12 @@ class PaymentController extends Controller
             'proof_image_url',
             'reported_amount',
         ]));
+
+        $payment->refresh();
+
+        if ($previousStatus !== $payment->payment_status) {
+            $this->syncOrderWithPaymentStatus($payment);
+        }
 
         $payment->load(['order', 'verifications']);
 
@@ -314,6 +322,37 @@ class PaymentController extends Controller
         $payment->delete();
 
         return response()->noContent();
+    }
+
+    /**
+     * El listado de órdenes muestra orders.payment_status. Aprobar el pago
+     * tiene que sacar la orden de pending_payment.
+     */
+    private function syncOrderWithPaymentStatus(Payment $payment): void
+    {
+        if (! $payment->order_id) {
+            return;
+        }
+
+        $order = Order::find($payment->order_id);
+        if (! $order) {
+            return;
+        }
+
+        if ($payment->payment_status === 'completed') {
+            $order->update([
+                'payment_status' => 'completed',
+                'order_status' => 'payment_verified',
+            ]);
+
+            return;
+        }
+
+        if (in_array($payment->payment_status, ['failed', 'refunded'], true)) {
+            $order->update([
+                'payment_status' => $payment->payment_status,
+            ]);
+        }
     }
 
     private function paymentAccessibleForBranch(Payment $payment, int $branchId): bool
