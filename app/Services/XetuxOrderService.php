@@ -123,7 +123,7 @@ class XetuxOrderService
             }
 
             $lineNotes = $this->combinacionesToNotes($comboLine['combinaciones'] ?? []);
-            $additionals = [];
+            $additionals = $this->mapIncludedSelectionAdditionals($comboLine);
 
             $comboExtras = $extras->filter(function ($extra) use ($comboId) {
                 $parent = $extra['parent_combo_id'] ?? null;
@@ -238,6 +238,23 @@ class XetuxOrderService
             if (! is_array($row)) {
                 continue;
             }
+            $kind = (string) ($row['kind'] ?? '');
+            if ($kind === 'sauce') {
+                $name = trim((string) ($row['proteina'] ?? $row['product_name'] ?? ''));
+                $qty = max(1, (int) ($row['quantity'] ?? 1));
+                if ($name !== '') {
+                    $parts[] = "Salsa: {$name} x{$qty}";
+                }
+                continue;
+            }
+            if ($kind === 'drink') {
+                $name = trim((string) ($row['proteina'] ?? $row['product_name'] ?? ''));
+                if ($name !== '') {
+                    $parts[] = "Bebida: {$name}";
+                }
+                continue;
+            }
+
             $t = $row['textura'] ?? '';
             $p = $row['proteina'] ?? '';
             $c = $row['complemento'] ?? '';
@@ -295,6 +312,125 @@ class XetuxOrderService
         }
 
         return null;
+    }
+
+    /**
+     * Salsas y bebida incluidas del combo, como adicionales de precio 0.
+     *
+     * @param  array<string, mixed>  $comboLine
+     * @return array<int, array<string, mixed>>
+     */
+    protected function mapIncludedSelectionAdditionals(array $comboLine): array
+    {
+        $additionals = [];
+
+        foreach ($comboLine['included_sauces'] ?? [] as $sauce) {
+            if (! is_array($sauce)) {
+                continue;
+            }
+            $mapped = $this->mapIncludedSelection($sauce, 'Salsa');
+            if ($mapped !== null) {
+                $additionals[] = $mapped;
+            }
+        }
+
+        $drink = $comboLine['included_drink'] ?? null;
+        if (is_array($drink)) {
+            $mapped = $this->mapIncludedSelection($drink, 'Bebida');
+            if ($mapped !== null) {
+                $additionals[] = $mapped;
+            }
+        }
+
+        return $additionals;
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     * @return array<string, mixed>|null
+     */
+    protected function mapIncludedSelection(array $selection, string $fallbackName): ?array
+    {
+        $qty = (int) ($selection['quantity'] ?? 1);
+        if ($qty <= 0) {
+            return null;
+        }
+
+        $xetuxId = (int) ($selection['xetux_product_id'] ?? $selection['xetux_item_id'] ?? 0);
+        if ($xetuxId <= 0) {
+            return null;
+        }
+
+        $name = trim((string) ($selection['product_name'] ?? $selection['name'] ?? ''));
+
+        return [
+            'id' => $xetuxId,
+            'name' => $name !== '' ? $name : $fallbackName,
+            'quantity' => (float) $qty,
+            'price' => 0.0,
+            'taxValue' => 0.0,
+        ];
+    }
+
+    /**
+     * Deja salsas y bebida dentro de combinaciones para que el panel admin las muestre.
+     *
+     * @param  array<int, mixed>  $combinaciones
+     * @param  array<int, mixed>  $sauces
+     * @param  array<string, mixed>|null  $drink
+     * @return array<int, array<string, mixed>>
+     */
+    public function mergeIncludedSelections(array $combinaciones, array $sauces, ?array $drink): array
+    {
+        $rows = [];
+        foreach ($combinaciones as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $kind = (string) ($row['kind'] ?? '');
+            if ($kind === 'sauce' || $kind === 'drink') {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        foreach ($sauces as $sauce) {
+            if (! is_array($sauce)) {
+                continue;
+            }
+            $qty = (int) ($sauce['quantity'] ?? 0);
+            $name = trim((string) ($sauce['product_name'] ?? $sauce['name'] ?? ''));
+            if ($qty <= 0 || $name === '') {
+                continue;
+            }
+            $rows[] = [
+                'textura' => 'Salsa',
+                'proteina' => $name,
+                'complemento' => 'x'.$qty,
+                'kind' => 'sauce',
+                'quantity' => $qty,
+                'xetux_product_id' => (int) ($sauce['xetux_product_id'] ?? 0) ?: null,
+                'xetux_item_id' => (int) ($sauce['xetux_item_id'] ?? 0) ?: null,
+            ];
+        }
+
+        if (is_array($drink)) {
+            $name = trim((string) ($drink['product_name'] ?? $drink['name'] ?? ''));
+            $qty = (int) ($drink['quantity'] ?? 1);
+            if ($name !== '' && $qty > 0) {
+                $rows[] = [
+                    'textura' => 'Bebida',
+                    'proteina' => $name,
+                    'complemento' => 'Incluida',
+                    'kind' => 'drink',
+                    'quantity' => $qty,
+                    'xetux_product_id' => (int) ($drink['xetux_product_id'] ?? 0) ?: null,
+                    'xetux_item_id' => (int) ($drink['xetux_item_id'] ?? 0) ?: null,
+                ];
+            }
+        }
+
+        return $rows;
     }
 
     /**
@@ -371,6 +507,11 @@ class XetuxOrderService
                     $line['xetux_product_id'] = $combo->xetux_product_id;
                     $line['xetux_item_id'] = $combo->xetux_item_id;
                 }
+                $line['combinaciones'] = $this->mergeIncludedSelections(
+                    is_array($line['combinaciones'] ?? null) ? $line['combinaciones'] : [],
+                    is_array($line['included_sauces'] ?? null) ? $line['included_sauces'] : [],
+                    is_array($line['included_drink'] ?? null) ? $line['included_drink'] : null
+                );
             }
             if ($type === 'extra' && ! empty($line['extra_id'])) {
                 $extra = Extra::find((int) $line['extra_id']);
