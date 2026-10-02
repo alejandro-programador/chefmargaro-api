@@ -7,9 +7,11 @@ use App\Http\Requests\Api\V1\StorePaymentRequest;
 use App\Http\Resources\Api\V1\PaymentResource;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\XetuxOrderService;
 use App\Support\BranchScope;
 use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -270,7 +272,7 @@ class PaymentController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Payment $payment)
+    public function update(Request $request, Payment $payment, XetuxOrderService $xetuxOrders)
     {
         $branchId = BranchScope::requestedBranchId($request);
         if ($branchId !== null && ! $this->paymentAccessibleForBranch($payment, $branchId)) {
@@ -304,9 +306,14 @@ class PaymentController extends Controller
 
         $payment->load(['order', 'verifications']);
 
+        $xetux = $this->xetuxPayloadForApprovedPayment($payment, $xetuxOrders);
+
         return response()->json([
             'message' => 'Payment updated successfully',
             'data' => new PaymentResource($payment),
+            'xetux_payload' => $xetux['payload_json'],
+            'xetux_response' => $xetux['response'],
+            'xetux_tracking_number' => $xetux['tracking'],
         ]);
     }
 
@@ -322,6 +329,76 @@ class PaymentController extends Controller
         $payment->delete();
 
         return response()->noContent();
+    }
+
+    /**
+     * @return array{payload_json: string|null, response: array<string, mixed>|null, tracking: string|null}
+     */
+    private function xetuxPayloadForApprovedPayment(Payment $payment, XetuxOrderService $xetuxOrders): array
+    {
+        $empty = ['payload_json' => null, 'response' => null, 'tracking' => null];
+
+        if ($payment->payment_status !== 'completed' || ! $payment->order_id) {
+            return $empty;
+        }
+
+        $order = Order::with(['customer', 'orderItems.combo', 'orderItems.extra', 'orderItems.product'])
+            ->find($payment->order_id);
+
+        if (! $order) {
+            return $empty;
+        }
+
+        try {
+            $payload = $xetuxOrders->payloadForStoredOrder($order);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $empty;
+        }
+
+        $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (! is_string($payloadJson)) {
+            return $empty;
+        }
+
+        Log::info('Xetux JSON pago #'.$payment->payment_id.' '.$payloadJson);
+
+        if ($order->xetux_order_id) {
+            return [
+                'payload_json' => $payloadJson,
+                'response' => [
+                    'already_sent' => true,
+                    'ordersResponse' => [[
+                        'xposOrderNumber' => $order->xetux_tracking_number,
+                    ]],
+                ],
+                'tracking' => $order->xetux_tracking_number,
+            ];
+        }
+
+        try {
+            $sent = $xetuxOrders->send($payload);
+            $xetuxOrder = $payload['orders'][0] ?? [];
+            $order->update([
+                'xetux_order_id' => $xetuxOrder['id'] ?? null,
+                'xetux_tracking_number' => $xetuxOrder['trackingNumber'] ?? null,
+            ]);
+
+            return [
+                'payload_json' => $payloadJson,
+                'response' => $sent,
+                'tracking' => $xetuxOrder['trackingNumber'] ?? null,
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [
+                'payload_json' => $payloadJson,
+                'response' => ['error' => $e->getMessage()],
+                'tracking' => null,
+            ];
+        }
     }
 
     /**

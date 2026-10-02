@@ -527,4 +527,137 @@ class XetuxOrderService
             return $line;
         })->all();
     }
+
+    /**
+     * Arma el mismo JSON de Xetux a partir de la orden ya guardada.
+     *
+     * @return array<string, mixed>
+     */
+    public function payloadForStoredOrder(Order $order): array
+    {
+        $order->loadMissing(['customer', 'orderItems.combo', 'orderItems.extra', 'orderItems.product']);
+
+        $customer = $order->customer;
+        if (! $customer) {
+            $customer = new Customer([
+                'name' => 'Cliente',
+                'email' => '',
+            ]);
+            $customer->customer_id = 0;
+        }
+
+        $payload = $this->buildPayload(
+            $order,
+            $customer,
+            $this->resolveCartLines($this->cartLinesFromOrderItems($order)),
+            ['notes' => (string) ($order->notes ?? '')]
+        );
+
+        if ($order->xetux_order_id) {
+            $payload['orders'][0]['id'] = (int) $order->xetux_order_id;
+        }
+        if (is_string($order->xetux_tracking_number) && $order->xetux_tracking_number !== '') {
+            $payload['orders'][0]['trackingNumber'] = $order->xetux_tracking_number;
+            $payload['orders'][0]['trackingShort'] = $order->xetux_tracking_number;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function cartLinesFromOrderItems(Order $order): array
+    {
+        $lines = [];
+
+        foreach ($order->orderItems as $item) {
+            if ($item->combo_id) {
+                [$combinaciones, $sauces, $drink] = $this->splitStoredCombinaciones($item->combinaciones);
+                $combo = $item->combo;
+                $lines[] = [
+                    'type' => 'combo',
+                    'combo_id' => (int) $item->combo_id,
+                    'name' => $combo?->name,
+                    'quantity' => (int) $item->quantity,
+                    'unit_price' => (float) ($combo?->price_eur ?? 0),
+                    'combinaciones' => $combinaciones,
+                    'included_sauces' => $sauces,
+                    'included_drink' => $drink,
+                ];
+                continue;
+            }
+
+            if ($item->extra_id) {
+                $extra = $item->extra;
+                $lines[] = [
+                    'type' => 'extra',
+                    'extra_id' => (int) $item->extra_id,
+                    'name' => $extra?->title ?? 'Extra',
+                    'quantity' => (int) $item->quantity,
+                    'unit_price' => (float) ($extra?->price_eur ?? 0),
+                    'xetux_product_id' => $extra?->xetux_product_id,
+                    'xetux_item_id' => $extra?->xetux_item_id,
+                ];
+                continue;
+            }
+
+            if ($item->product_id) {
+                $product = $item->product;
+                $lines[] = [
+                    'type' => 'product',
+                    'product_id' => (int) $item->product_id,
+                    'name' => $product?->name ?? 'Producto',
+                    'quantity' => (int) $item->quantity,
+                    'unit_price' => (float) ($product?->price_eur ?? 0),
+                ];
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, mixed>>, 2: array<string, mixed>|null}
+     */
+    protected function splitStoredCombinaciones(mixed $stored): array
+    {
+        $rows = [];
+        if (is_array($stored) && $stored !== []) {
+            $isRow = isset($stored['textura']) || isset($stored['proteina']) || isset($stored['kind']);
+            $rows = $isRow ? [$stored] : array_values($stored);
+        }
+
+        $combinaciones = [];
+        $sauces = [];
+        $drink = null;
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $kind = (string) ($row['kind'] ?? '');
+            if ($kind === 'sauce') {
+                $sauces[] = [
+                    'product_name' => (string) ($row['proteina'] ?? $row['product_name'] ?? ''),
+                    'quantity' => (int) ($row['quantity'] ?? 1),
+                    'xetux_product_id' => $row['xetux_product_id'] ?? null,
+                    'xetux_item_id' => $row['xetux_item_id'] ?? null,
+                ];
+                continue;
+            }
+            if ($kind === 'drink' && $drink === null) {
+                $drink = [
+                    'product_name' => (string) ($row['proteina'] ?? $row['product_name'] ?? ''),
+                    'quantity' => 1,
+                    'xetux_product_id' => $row['xetux_product_id'] ?? null,
+                    'xetux_item_id' => $row['xetux_item_id'] ?? null,
+                ];
+                continue;
+            }
+            $combinaciones[] = $row;
+        }
+
+        return [$combinaciones, $sauces, $drink];
+    }
 }
