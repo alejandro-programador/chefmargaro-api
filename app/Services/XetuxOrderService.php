@@ -46,10 +46,14 @@ class XetuxOrderService
             $notes = trim($notes."\nReferencia: ".$checkoutMeta['reference_point']);
         }
 
-        $ingredientsByProduct = $this->ingredientsIndexByProductId();
+        $deliveryType = strtolower((string) ($checkoutMeta['delivery_type'] ?? $order->delivery_type ?? 'pickup'));
+        $isPickup = $deliveryType !== 'delivery';
+        $cedula = preg_replace('/\D+/', '', (string) ($checkoutMeta['cedula'] ?? '')) ?? '';
 
         return [
+            'keyXpos' => (string) config('xetux.key_xpos'),
             'keyXpedidos' => config('xetux.key_xpedidos'),
+            'xposOrderNumber' => (string) config('xetux.xpos_order_number', '1'),
             'orders' => [
                 [
                     'id' => $xetuxOrderId,
@@ -58,9 +62,13 @@ class XetuxOrderService
                     'trackingShort' => $tracking,
                     'notes' => $notes !== '' ? $notes : 'Pedido ecommerce Chef Margaro',
                     'payformId' => (int) config('xetux.payform_id', 1),
+                    'pickupTypeId' => $isPickup ? 2 : 1,
+                    'pickupTypeName' => $isPickup ? 'PickUp' : 'Delivery',
                     'createdAt' => $createdAt,
                     'client' => [
                         'id' => (int) ($customer->customer_id + 3000000),
+                        'docType' => 'V',
+                        'document' => $cedula,
                         'firstName' => $firstName,
                         'lastName' => $lastName,
                         'email' => $customer->email,
@@ -71,10 +79,13 @@ class XetuxOrderService
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'total' => $total,
+                    'totalAlternative' => $total,
                     'totalDiscount' => 0.0,
                     'tip' => 0.0,
                     'shippingCost' => 0.0,
-                    'body' => $this->buildBodyLines($cartLines, $ingredientsByProduct),
+                    'body' => $this->buildBodyLines($cartLines, $this->promotionContext()),
+                    'paid' => false,
+                    'billed' => false,
                 ],
             ],
             'ordersCount' => 1,
@@ -105,9 +116,10 @@ class XetuxOrderService
 
     /**
      * @param  array<int, array<string, mixed>>  $cartLines
+     * @param  array<string, mixed>  $context
      * @return array<int, array<string, mixed>>
      */
-    protected function buildBodyLines(array $cartLines, Collection $ingredientsByProduct): array
+    protected function buildBodyLines(array $cartLines, array $context): array
     {
         $lines = collect($cartLines);
         $combos = $lines->where('type', 'combo')->values();
@@ -122,41 +134,17 @@ class XetuxOrderService
                 throw new RuntimeException("El combo #{$comboId} no tiene producto Xetux vinculado.");
             }
 
-            $lineNotes = $this->combinacionesToNotes($comboLine['combinaciones'] ?? []);
-            $additionals = $this->mapIncludedSelectionAdditionals($comboLine);
-
             $comboExtras = $extras->filter(function ($extra) use ($comboId) {
                 $parent = $extra['parent_combo_id'] ?? null;
                 if ($parent !== null && (int) $parent === $comboId) {
                     return true;
                 }
                 $cartKey = (string) ($extra['cart_key'] ?? '');
+
                 return str_starts_with($cartKey, "extra-combo-{$comboId}-");
-            });
+            })->all();
 
-            foreach ($comboExtras as $extraLine) {
-                $additionals[] = $this->mapAdditionalLine($extraLine);
-            }
-
-            $additionals = array_merge(
-                $additionals,
-                $this->mapPreferenceAdditionals($comboLine, $xetuxProductId, $ingredientsByProduct)
-            );
-
-            $unitPrice = (float) ($comboLine['unit_price'] ?? 0);
-            $qty = (float) ($comboLine['quantity'] ?? 1);
-
-            $body[] = [
-                'id' => $xetuxProductId,
-                'product' => [
-                    'id' => $xetuxProductId,
-                    'name' => (string) ($comboLine['name'] ?? 'Combo'),
-                ],
-                'notes' => $lineNotes,
-                'additionals' => $additionals,
-                'quantity' => $qty,
-                'price' => round($unitPrice, 2),
-            ];
+            $body[] = $this->mapComboBodyLine($comboLine, $comboExtras, $context);
         }
 
         foreach ($extras as $extraLine) {
@@ -174,17 +162,11 @@ class XetuxOrderService
                 );
             }
 
-            $body[] = [
-                'id' => $xetuxProductId,
-                'product' => [
-                    'id' => $xetuxProductId,
-                    'name' => (string) ($extraLine['name'] ?? 'Extra'),
-                ],
-                'notes' => '',
-                'additionals' => [],
-                'quantity' => (float) ($extraLine['quantity'] ?? 1),
-                'price' => round((float) ($extraLine['unit_price'] ?? 0), 2),
-            ];
+            $body[] = $this->nestedCatalogProduct(
+                $this->resolveCatalogProduct($xetuxProductId, (string) ($extraLine['name'] ?? 'Extra'), $context),
+                (int) ($extraLine['quantity'] ?? 1),
+                round((float) ($extraLine['unit_price'] ?? 0), 2)
+            );
         }
 
         foreach ($products as $productLine) {
@@ -192,17 +174,11 @@ class XetuxOrderService
             if ($xetuxProductId <= 0) {
                 continue;
             }
-            $body[] = [
-                'id' => $xetuxProductId,
-                'product' => [
-                    'id' => $xetuxProductId,
-                    'name' => (string) ($productLine['name'] ?? 'Producto'),
-                ],
-                'notes' => '',
-                'additionals' => [],
-                'quantity' => (float) ($productLine['quantity'] ?? 1),
-                'price' => round((float) ($productLine['unit_price'] ?? 0), 2),
-            ];
+            $body[] = $this->nestedCatalogProduct(
+                $this->resolveCatalogProduct($xetuxProductId, (string) ($productLine['name'] ?? 'Producto'), $context),
+                (int) ($productLine['quantity'] ?? 1),
+                round((float) ($productLine['unit_price'] ?? 0), 2)
+            );
         }
 
         if ($body === []) {
@@ -464,6 +440,395 @@ class XetuxOrderService
             });
     }
 
+    /**
+     * Combo Xetux: el promo envuelve productos. Cada combinación de 10 rolls
+     * es un producto con adicionales de textura, proteína y complemento.
+     * Salsas y bebida van como productos hermanos, no como adicionales.
+     *
+     * @param  array<string, mixed>  $comboLine
+     * @param  array<int, array<string, mixed>>  $comboExtras
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    public function mapComboBodyLine(array $comboLine, array $comboExtras, array $context): array
+    {
+        $xetuxProductId = (int) ($comboLine['xetux_product_id'] ?? 0);
+        $comboProduct = $this->resolveCatalogProduct(
+            $xetuxProductId,
+            (string) ($comboLine['name'] ?? 'Combo'),
+            $context
+        );
+        $comboProduct['combo'] = true;
+
+        $groups = $context['promotions'][$xetuxProductId] ?? [
+            'rolls' => [],
+            'sauces' => [],
+            'drinks' => [],
+            'toppings' => [],
+        ];
+
+        $nested = [];
+        foreach ($comboLine['combinaciones'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $kind = (string) ($row['kind'] ?? '');
+            if ($kind === 'sauce' || $kind === 'drink') {
+                continue;
+            }
+            if ($this->normalizeLabel((string) ($row['textura'] ?? '')) === 'TOPPING') {
+                $topping = $this->matchNamedProduct($groups['toppings'], (string) ($row['proteina'] ?? ''));
+                if ($topping) {
+                    $nested[] = $this->nestedCatalogProduct($topping, 1, 0);
+                }
+                continue;
+            }
+
+            $roll = $this->selectRollProduct($groups['rolls'], $row);
+            if (! $roll) {
+                continue;
+            }
+            $line = $this->nestedCatalogProduct($roll, (int) ($comboLine['quantity'] ?? 1), 0);
+            $additionals = [];
+            foreach (['textura', 'proteina', 'complemento'] as $field) {
+                $additional = $this->modifierAdditional((string) ($row[$field] ?? ''), $context);
+                if ($additional) {
+                    $additionals[] = $additional;
+                }
+            }
+            if ($additionals !== []) {
+                $line['additionals'] = $additionals;
+            }
+            $nested[] = $line;
+        }
+
+        foreach ($comboLine['included_sauces'] ?? [] as $sauce) {
+            if (! is_array($sauce)) {
+                continue;
+            }
+            $qty = (int) ($sauce['quantity'] ?? 0);
+            if ($qty <= 0) {
+                continue;
+            }
+            $product = $this->matchNamedProduct($groups['sauces'], (string) ($sauce['product_name'] ?? $sauce['name'] ?? ''))
+                ?? $this->resolveCatalogProduct((int) ($sauce['xetux_product_id'] ?? 0), (string) ($sauce['product_name'] ?? 'Salsa'), $context);
+            if ((int) ($product['id'] ?? 0) <= 0) {
+                continue;
+            }
+            $nested[] = $this->nestedCatalogProduct($product, $qty, 0);
+        }
+
+        $drink = $comboLine['included_drink'] ?? null;
+        if (is_array($drink) && (int) ($drink['quantity'] ?? 1) > 0) {
+            $product = $this->matchNamedProduct($groups['drinks'], (string) ($drink['product_name'] ?? $drink['name'] ?? ''))
+                ?? $this->resolveCatalogProduct((int) ($drink['xetux_product_id'] ?? 0), (string) ($drink['product_name'] ?? 'Bebida'), $context);
+            if ((int) ($product['id'] ?? 0) > 0) {
+                $nested[] = $this->nestedCatalogProduct($product, 1, 0);
+            }
+        }
+
+        foreach ($comboExtras as $extraLine) {
+            $product = $this->resolveCatalogProduct(
+                (int) ($extraLine['xetux_product_id'] ?? 0),
+                (string) ($extraLine['name'] ?? 'Extra'),
+                $context
+            );
+            $nested[] = $this->nestedCatalogProduct(
+                $product,
+                (int) ($extraLine['quantity'] ?? 1),
+                round((float) ($extraLine['unit_price'] ?? 0), 2)
+            );
+        }
+
+        return [
+            'id' => (int) $comboProduct['id'],
+            'product' => [
+                'id' => (int) $comboProduct['id'],
+                'name' => (string) $comboProduct['name'],
+                'code' => (string) ($comboProduct['sku'] ?? ''),
+                'promo' => true,
+            ],
+            'notes' => $this->comboLineNotes($comboLine),
+            'quantity' => (int) ($comboLine['quantity'] ?? 1),
+            'price' => round((float) ($comboLine['unit_price'] ?? 0), 2),
+            'products' => $nested,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $comboLine
+     */
+    protected function comboLineNotes(array $comboLine): string
+    {
+        $notes = $this->combinacionesToNotes($comboLine['combinaciones'] ?? []);
+        $extra = [];
+        if (array_key_exists('rollsConSesamo', $comboLine) && $comboLine['rollsConSesamo'] !== null) {
+            $extra[] = $comboLine['rollsConSesamo']
+                ? 'Confirmo que deseo los rolls con sésamo.'
+                : 'Sin sésamo.';
+        }
+        if (array_key_exists('rollsConQuesoCremaCebollin', $comboLine) && $comboLine['rollsConQuesoCremaCebollin'] !== null) {
+            $extra[] = $comboLine['rollsConQuesoCremaCebollin']
+                ? 'Confirmo que deseo los rolls con queso crema y cebollín.'
+                : 'Sin queso crema y cebollín.';
+        }
+        if ($extra === []) {
+            return $notes;
+        }
+
+        return trim($notes.' | '.implode(' | ', $extra), ' |');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rollProducts
+     * @param  array<string, mixed>  $combination
+     * @return array<string, mixed>|null
+     */
+    protected function selectRollProduct(array $rollProducts, array $combination): ?array
+    {
+        $protein = $this->normalizeLabel((string) ($combination['proteina'] ?? ''));
+        if (str_contains($protein, 'MIXTO')) {
+            $mixtos = $this->matchNamedProduct($rollProducts, 'MIXTOS');
+            if ($mixtos) {
+                return $mixtos;
+            }
+        }
+
+        $especiales = $this->matchNamedProduct($rollProducts, 'ESPECIALES');
+        if ($especiales) {
+            return $especiales;
+        }
+
+        return $rollProducts[0] ?? null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>|null
+     */
+    protected function modifierAdditional(string $name, array $context): ?array
+    {
+        $key = $this->normalizeLabel($name);
+        if ($key === '') {
+            return null;
+        }
+        $additional = $context['additionalsByName'][$key] ?? null;
+        if (! is_array($additional)) {
+            return null;
+        }
+        $category = $context['categoryByAdditionalId'][(string) ($additional['id'] ?? '')] ?? null;
+
+        return [
+            'id' => (int) ($additional['id'] ?? 0),
+            'name' => (string) ($additional['name'] ?? $name),
+            'code' => (string) ($additional['sku'] ?? ''),
+            'quantity' => 1,
+            'price' => 0,
+            'taxValue' => 0,
+            'categoryId' => (int) ($category['id'] ?? 0),
+            'categoryName' => (string) ($category['name'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $products
+     * @return array<string, mixed>|null
+     */
+    protected function matchNamedProduct(array $products, string $name): ?array
+    {
+        $needle = $this->normalizeLabel($name);
+        if ($needle === '') {
+            return null;
+        }
+        $best = null;
+        $bestScore = 0;
+        foreach ($products as $product) {
+            $label = $this->normalizeLabel((string) ($product['name'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+            $score = 0;
+            if ($label === $needle) {
+                $score = 100;
+            } elseif (str_contains($label, $needle) || str_contains($needle, $label)) {
+                $score = 50 + min(strlen($label), strlen($needle));
+            }
+            if ($score > $bestScore) {
+                $best = $product;
+                $bestScore = $score;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    protected function resolveCatalogProduct(int $id, string $fallbackName, array $context): array
+    {
+        $found = $context['productsById'][$id] ?? null;
+        if (is_array($found)) {
+            return $found;
+        }
+
+        return [
+            'id' => $id,
+            'name' => $fallbackName !== '' ? $fallbackName : 'Producto',
+            'sku' => '',
+            'combo' => false,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $product
+     * @return array<string, mixed>
+     */
+    protected function nestedCatalogProduct(array $product, int $quantity, float $price): array
+    {
+        $id = (int) ($product['id'] ?? 0);
+
+        return [
+            'id' => $id,
+            'product' => [
+                'id' => $id,
+                'name' => (string) ($product['name'] ?? 'Producto'),
+                'code' => (string) ($product['sku'] ?? ''),
+                'promo' => (bool) ($product['combo'] ?? false),
+            ],
+            'notes' => '',
+            'quantity' => max(1, $quantity),
+            'price' => $price,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function promotionContext(): array
+    {
+        $empty = [
+            'productsById' => [],
+            'additionalsByName' => [],
+            'categoryByAdditionalId' => [],
+            'promotions' => [],
+        ];
+
+        try {
+            $catalogue = $this->catalogue->fetchCatalogue();
+        } catch (RuntimeException) {
+            return $empty;
+        }
+
+        $data = $catalogue['data'] ?? null;
+        if (! is_array($data) || ! isset($data['products'])) {
+            $data = $catalogue;
+        }
+        if (! is_array($data)) {
+            return $empty;
+        }
+
+        $productsById = [];
+        foreach ($data['products'] ?? [] as $product) {
+            if (! is_array($product)) {
+                continue;
+            }
+            $id = (int) ($product['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $productsById[$id] = [
+                'id' => $id,
+                'name' => (string) ($product['name'] ?? ''),
+                'sku' => (string) ($product['sku'] ?? ''),
+                'combo' => filter_var($product['combo'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            ];
+        }
+
+        $categoriesById = [];
+        foreach ($data['categories'] ?? [] as $category) {
+            if (! is_array($category)) {
+                continue;
+            }
+            $categoriesById[(string) ($category['id'] ?? '')] = [
+                'id' => (int) ($category['id'] ?? 0),
+                'name' => (string) ($category['name'] ?? ''),
+            ];
+        }
+
+        $additionalsByName = [];
+        foreach ($data['additionals'] ?? [] as $additional) {
+            if (! is_array($additional)) {
+                continue;
+            }
+            $key = $this->normalizeLabel((string) ($additional['name'] ?? ''));
+            if ($key !== '') {
+                $additionalsByName[$key] = $additional;
+            }
+        }
+
+        $categoryByAdditionalId = [];
+        foreach ($data['additionalCategories'] ?? [] as $link) {
+            if (! is_array($link)) {
+                continue;
+            }
+            $optionId = (string) ($link['optionId'] ?? '');
+            $category = $categoriesById[(string) ($link['groupId'] ?? '')] ?? null;
+            if ($optionId !== '' && is_array($category)) {
+                $categoryByAdditionalId[$optionId] = $category;
+            }
+        }
+
+        $familyNames = [];
+        foreach ($data['familyPromotions'] ?? [] as $family) {
+            if (! is_array($family)) {
+                continue;
+            }
+            $familyNames[(string) ($family['parentProductId'] ?? '').':'.(string) ($family['familyPromotionId'] ?? '')] = (string) ($family['name'] ?? '');
+        }
+
+        $promotions = [];
+        foreach ($data['productPromotions'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $parentId = (int) ($row['parentProductId'] ?? 0);
+            $product = $productsById[(int) ($row['productId'] ?? 0)] ?? null;
+            if ($parentId <= 0 || ! is_array($product)) {
+                continue;
+            }
+            $familyName = $this->normalizeLabel($familyNames[$parentId.':'.(string) ($row['familyPromotionId'] ?? '')] ?? '');
+            $bucket = 'drinks';
+            if (str_contains($familyName, 'ROLL')) {
+                $bucket = 'rolls';
+            } elseif (str_contains($familyName, 'SALSA')) {
+                $bucket = 'sauces';
+            } elseif (str_contains($familyName, 'TOPPING') || str_contains($familyName, 'RACION')) {
+                $bucket = 'toppings';
+            }
+            $promotions[$parentId][$bucket][] = $product;
+        }
+
+        return [
+            'productsById' => $productsById,
+            'additionalsByName' => $additionalsByName,
+            'categoryByAdditionalId' => $categoryByAdditionalId,
+            'promotions' => $promotions,
+        ];
+    }
+
+    protected function normalizeLabel(string $value): string
+    {
+        $value = strtoupper(trim($value));
+        $value = strtr($value, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ñ' => 'N', 'Ü' => 'U',
+            'á' => 'A', 'é' => 'E', 'í' => 'I', 'ó' => 'O', 'ú' => 'U', 'ñ' => 'N', 'ü' => 'U',
+        ]);
+
+        return trim((string) preg_replace('/[^A-Z0-9]+/', ' ', $value));
+    }
+
     protected function generateXetuxOrderId(int $localOrderId): int
     {
         // Xetux guarda orders[].id como int de 32 bits: debe ser menor a 2147483648.
@@ -550,7 +915,10 @@ class XetuxOrderService
             $order,
             $customer,
             $this->resolveCartLines($this->cartLinesFromOrderItems($order)),
-            ['notes' => (string) ($order->notes ?? '')]
+            [
+                'notes' => (string) ($order->notes ?? ''),
+                'delivery_type' => (string) ($order->delivery_type ?? 'pickup'),
+            ]
         );
 
         if ($order->xetux_order_id) {

@@ -135,7 +135,9 @@ class CheckoutOrderController extends Controller
     {
         return [
             'phone' => $data['customer']['phone'] ?? '',
+            'cedula' => $data['customer']['cedula'] ?? '',
             'notes' => $data['notes'] ?? '',
+            'delivery_type' => $data['delivery_type'] ?? 'pickup',
             'delivery_address' => $data['delivery_address'] ?? '',
             'reference_point' => $data['reference_point'] ?? '',
         ];

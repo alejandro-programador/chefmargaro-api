@@ -19,6 +19,8 @@ return [
     ),
 
     'key_xpedidos' => env('XETUX_API_KEY', '096fc2e4-66df-4d71-9b5a-5d3290d75d6d'),
+    'key_xpos' => env('XETUX_KEY_XPOS', '0x06C902AA18266716BDF02E8541BCB9AC'),
+    'xpos_order_number' => env('XETUX_XPOS_ORDER_NUMBER', '1'),
 
     'system_type_id' => 1,
     'payform_id' => 1,
