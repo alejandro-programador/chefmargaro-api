@@ -87,4 +87,41 @@ class XetuxIncludedSelectionsTest extends TestCase
         $this->assertSame(124, $line['products'][2]['id']);
         $this->assertArrayNotHasKey('additionals', $line['products'][1]);
     }
+
+    public function test_fuji_sauce_uses_combo_promotion_id_125(): void
+    {
+        $service = new XetuxOrderService(new XetuxCatalogueService);
+        $soya = ['id' => 123, 'name' => 'SOYA', 'sku' => 'XPRO2607000137', 'combo' => false];
+        $anguila = ['id' => 124, 'name' => 'ANGUILA', 'sku' => 'XPRO2607000139', 'combo' => false];
+        $fuji = ['id' => 125, 'name' => 'SOYA', 'sku' => 'XPRO2607000141', 'combo' => false];
+
+        $line = $service->mapComboBodyLine([
+            'xetux_product_id' => 47,
+            'name' => 'Combo Full 50 Rolls',
+            'quantity' => 1,
+            'unit_price' => 34,
+            'combinaciones' => [],
+            'included_sauces' => [
+                ['product_name' => 'FUJI', 'quantity' => 1, 'xetux_product_id' => 143],
+            ],
+        ], [], [
+            'productsById' => [
+                47 => ['id' => 47, 'name' => 'COMBO FULL 50 ROLLS', 'sku' => 'XPROM2509000005', 'combo' => true],
+            ],
+            'additionalsByName' => [],
+            'categoryByAdditionalId' => [],
+            'promotions' => [
+                47 => [
+                    'rolls' => [],
+                    'sauces' => [$soya, $anguila, $fuji],
+                    'drinks' => [],
+                    'toppings' => [],
+                ],
+            ],
+        ]);
+
+        $this->assertSame(125, $line['products'][0]['id']);
+        $this->assertSame('FUJI', $line['products'][0]['product']['name']);
+        $this->assertSame('XPRO2607000141', $line['products'][0]['product']['code']);
+    }
 }

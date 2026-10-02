@@ -514,7 +514,7 @@ class XetuxOrderService
             if ($qty <= 0) {
                 continue;
             }
-            $product = $this->matchNamedProduct($groups['sauces'], (string) ($sauce['product_name'] ?? $sauce['name'] ?? ''))
+            $product = $this->matchSauceProduct($groups['sauces'], (string) ($sauce['product_name'] ?? $sauce['name'] ?? ''))
                 ?? $this->resolveCatalogProduct((int) ($sauce['xetux_product_id'] ?? 0), (string) ($sauce['product_name'] ?? 'Salsa'), $context);
             if ((int) ($product['id'] ?? 0) <= 0) {
                 continue;
@@ -632,6 +632,28 @@ class XetuxOrderService
             'categoryId' => (int) ($category['id'] ?? 0),
             'categoryName' => (string) ($category['name'] ?? ''),
         ];
+    }
+
+    /**
+     * FUJI está en la promoción del combo como producto 125.
+     * El id 143 guardado en la app no es el que acepta Xetux.
+     *
+     * @param  array<int, array<string, mixed>>  $sauces
+     * @return array<string, mixed>|null
+     */
+    protected function matchSauceProduct(array $sauces, string $name): ?array
+    {
+        if ($this->normalizeLabel($name) === 'FUJI') {
+            foreach ($sauces as $sauce) {
+                if ((int) ($sauce['id'] ?? 0) === 125) {
+                    $sauce['name'] = 'FUJI';
+
+                    return $sauce;
+                }
+            }
+        }
+
+        return $this->matchNamedProduct($sauces, $name);
     }
 
     /**
