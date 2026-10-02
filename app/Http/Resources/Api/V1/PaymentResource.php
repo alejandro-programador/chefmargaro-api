@@ -21,11 +21,16 @@ class PaymentResource extends JsonResource
             'order' => $this->whenLoaded('order', function () {
                 return new OrderResource($this->order);
             }),
+            'branch' => $this->whenLoaded('branch', function () {
+                return new BranchResource($this->branch);
+            }),
+            'customer_cedula' => $this->order?->customer_cedula,
+            'customer_phone' => $this->order?->customer_phone,
             'payment_method' => $this->payment_method,
             'payment_status' => $this->payment_status,
             'payment_date' => $this->payment_date,
             'proof_image_url' => PublicStorageUrl::normalize($this->proof_image_url),
-            'reference_number' => $this->reference_number,
+            'reference_number' => $this->reference_number ?: $this->order?->xetux_tracking_number,
             'payment_reference_number' => $this->payment_reference_number,
             'reported_amount' => $this->reported_amount,
             'verifications' => $this->whenLoaded('verifications', function () {

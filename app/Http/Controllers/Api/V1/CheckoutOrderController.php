@@ -11,7 +11,9 @@ use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Services\XetuxOrderService;
 use App\Support\PublicStorageUrl;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -42,6 +44,7 @@ class CheckoutOrderController extends Controller
         $xetuxPayload = null;
 
         try {
+            $this->ensureOrderContactColumns();
             $order = DB::transaction(function () use ($data, $request, $xetuxOrders, &$xetuxPayload) {
                 $customer = $this->resolveCustomer($data);
                 $cartLines = $xetuxOrders->resolveCartLines($data['cart_lines']);
@@ -60,6 +63,8 @@ class CheckoutOrderController extends Controller
                     'order_status' => 'pending_payment',
                     'tracking_token' => $trackingToken,
                     'notes' => $data['notes'] ?? null,
+                    'customer_phone' => trim((string) ($data['customer']['phone'] ?? '')) ?: null,
+                    'customer_cedula' => preg_replace('/\D+/', '', (string) ($data['customer']['cedula'] ?? '')) ?: null,
                 ]);
 
                 foreach ($cartLines as $line) {
@@ -77,10 +82,18 @@ class CheckoutOrderController extends Controller
                 $xetuxOrders->send($xetuxPayload);
 
                 $xetuxOrder = $xetuxPayload['orders'][0] ?? [];
+                $tracking = $xetuxOrder['trackingNumber'] ?? null;
                 $order->update([
                     'xetux_order_id' => $xetuxOrder['id'] ?? null,
-                    'xetux_tracking_number' => $xetuxOrder['trackingNumber'] ?? null,
+                    'xetux_tracking_number' => $tracking,
                 ]);
+                if (is_string($tracking) && $tracking !== '') {
+                    Payment::where('order_id', $order->order_id)
+                        ->where(function ($query) {
+                            $query->whereNull('reference_number')->orWhere('reference_number', '');
+                        })
+                        ->update(['reference_number' => $tracking]);
+                }
 
                 return $order->fresh();
             });
@@ -125,6 +138,18 @@ class CheckoutOrderController extends Controller
         ]);
 
         return $xetuxOrders->buildPayload($order, $customer, $cartLines, $this->checkoutMeta($data));
+    }
+
+    protected function ensureOrderContactColumns(): void
+    {
+        if (Schema::hasColumn('orders', 'customer_cedula')) {
+            return;
+        }
+
+        Schema::table('orders', function (Blueprint $table) {
+            $table->string('customer_phone', 30)->nullable();
+            $table->string('customer_cedula', 20)->nullable();
+        });
     }
 
     /**

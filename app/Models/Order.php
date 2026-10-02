@@ -36,6 +36,8 @@ class Order extends Model
         'order_status',
         'tracking_token',
         'notes',
+        'customer_phone',
+        'customer_cedula',
         'xetux_order_id',
         'xetux_tracking_number',
     ];

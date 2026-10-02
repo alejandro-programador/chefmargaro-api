@@ -26,6 +26,11 @@ class OrderResource extends JsonResource
             'payment_status' => $this->payment_status,
             'delivery_type' => $this->delivery_type,
             'branch_id' => $this->branch_id,
+            'branch' => $this->whenLoaded('branch', function () {
+                return new BranchResource($this->branch);
+            }),
+            'customer_phone' => $this->customer_phone,
+            'customer_cedula' => $this->customer_cedula,
             'notes' => $this->notes,
             'order_status' => $this->order_status,
             'tracking_token' => $this->tracking_token,

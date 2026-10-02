@@ -175,7 +175,7 @@ class PaymentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Payment::with(['order', 'verifications']);
+        $query = Payment::with(['order.customer', 'order.branch', 'branch', 'verifications']);
 
         $branchId = BranchScope::requestedBranchId($request);
         if ($branchId !== null) {
@@ -248,7 +248,7 @@ class PaymentController extends Controller
         unset($data['proof_image']);
 
         $payment = Payment::create($data);
-        $payment->load(['order', 'verifications']);
+        $payment->load(['order.customer', 'order.branch', 'branch', 'verifications']);
 
         return response()->json([
             'message' => 'Payment created successfully',
@@ -265,7 +265,7 @@ class PaymentController extends Controller
         if ($branchId !== null && ! $this->paymentAccessibleForBranch($payment, $branchId)) {
             abort(404);
         }
-        $payment->load(['order', 'verifications']);
+        $payment->load(['order.customer', 'order.branch', 'branch', 'verifications']);
         return new PaymentResource($payment);
     }
 
@@ -304,9 +304,9 @@ class PaymentController extends Controller
             $this->syncOrderWithPaymentStatus($payment);
         }
 
-        $payment->load(['order', 'verifications']);
-
         $xetux = $this->xetuxPayloadForApprovedPayment($payment, $xetuxOrders);
+        $payment->refresh();
+        $payment->load(['order.customer', 'order.branch', 'branch', 'verifications']);
 
         return response()->json([
             'message' => 'Payment updated successfully',
@@ -347,6 +347,11 @@ class PaymentController extends Controller
 
         if (! $order) {
             return $empty;
+        }
+
+        if (! $payment->reference_number && $order->xetux_tracking_number) {
+            $payment->reference_number = $order->xetux_tracking_number;
+            $payment->save();
         }
 
         try {

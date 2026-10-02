@@ -48,7 +48,11 @@ class XetuxOrderService
 
         $deliveryType = strtolower((string) ($checkoutMeta['delivery_type'] ?? $order->delivery_type ?? 'pickup'));
         $isPickup = $deliveryType !== 'delivery';
-        $cedula = preg_replace('/\D+/', '', (string) ($checkoutMeta['cedula'] ?? '')) ?? '';
+        $cedula = preg_replace('/\D+/', '', (string) ($checkoutMeta['cedula'] ?? $order->customer_cedula ?? '')) ?? '';
+        $phone = trim((string) ($checkoutMeta['phone'] ?? ''));
+        if ($phone === '') {
+            $phone = trim((string) ($order->customer_phone ?? ''));
+        }
 
         return [
             'keyXpos' => (string) config('xetux.key_xpos'),
@@ -72,7 +76,7 @@ class XetuxOrderService
                         'firstName' => $firstName,
                         'lastName' => $lastName,
                         'email' => $customer->email,
-                        'phone' => (string) ($checkoutMeta['phone'] ?? ''),
+                        'phone' => $phone,
                         'addressStreet' => (string) ($checkoutMeta['delivery_address'] ?? ''),
                         'addressHome' => (string) ($checkoutMeta['reference_point'] ?? ''),
                     ],
@@ -918,6 +922,8 @@ class XetuxOrderService
             [
                 'notes' => (string) ($order->notes ?? ''),
                 'delivery_type' => (string) ($order->delivery_type ?? 'pickup'),
+                'phone' => (string) ($order->customer_phone ?? ''),
+                'cedula' => (string) ($order->customer_cedula ?? ''),
             ]
         );
 
