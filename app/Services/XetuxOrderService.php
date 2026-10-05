@@ -235,11 +235,17 @@ class XetuxOrderService
                 continue;
             }
 
-            $t = $row['textura'] ?? '';
-            $p = $row['proteina'] ?? '';
-            $c = $row['complemento'] ?? '';
-            if ($t || $p || $c) {
-                $parts[] = 'Comb '.($index + 1).": {$t} / {$p} / {$c}";
+            $t = trim((string) ($row['textura'] ?? ''));
+            $roll = trim((string) ($row['roll'] ?? ''));
+            $p = trim((string) ($row['proteina'] ?? ''));
+            $c = trim((string) ($row['complemento'] ?? ''));
+            $includeProtein = $roll === '' || $this->isEspecialesRollName($roll);
+            $bits = array_values(array_filter(
+                [$t, $roll, $includeProtein ? $p : '', $c],
+                fn ($value) => $value !== ''
+            ));
+            if ($bits !== []) {
+                $parts[] = 'Comb '.($index + 1).': '.implode(' / ', $bits);
             }
         }
 
@@ -445,8 +451,9 @@ class XetuxOrderService
     }
 
     /**
-     * Combo Xetux: el promo envuelve productos. Cada combinación de 10 rolls
-     * es un producto con adicionales de textura, proteína y complemento.
+     * Combo Xetux: el promo envuelve productos. Cada combinación es la pieza
+     * de 10 rolls elegida, con textura y complemento. 10 ROLLS ESPECIALES
+     * además lleva el adicional de proteína (SOLO ATUN, SOLO POLLO, etc.).
      * Salsas y bebida van como productos hermanos, no como adicionales.
      *
      * @param  array<string, mixed>  $comboLine
@@ -488,13 +495,17 @@ class XetuxOrderService
                 continue;
             }
 
-            $roll = $this->selectRollProduct($groups['rolls'], $row);
+            $roll = $this->selectRollProduct($groups['rolls'], $row, $context);
             if (! $roll) {
                 continue;
             }
             $line = $this->nestedCatalogProduct($roll, (int) ($comboLine['quantity'] ?? 1), 0);
             $additionals = [];
-            foreach (['textura', 'proteina', 'complemento'] as $field) {
+            $modifierFields = ['textura', 'complemento'];
+            if ($this->combinationUsesProteinAdditional($roll, $row)) {
+                array_splice($modifierFields, 1, 0, ['proteina']);
+            }
+            foreach ($modifierFields as $field) {
                 $additional = $this->modifierAdditional((string) ($row[$field] ?? ''), $context);
                 if ($additional) {
                     $additionals[] = $additional;
@@ -586,10 +597,41 @@ class XetuxOrderService
     /**
      * @param  array<int, array<string, mixed>>  $rollProducts
      * @param  array<string, mixed>  $combination
+     * @param  array<string, mixed>  $context
      * @return array<string, mixed>|null
      */
-    protected function selectRollProduct(array $rollProducts, array $combination): ?array
+    protected function selectRollProduct(array $rollProducts, array $combination, array $context = []): ?array
     {
+        $rollId = (int) ($combination['roll_product_id'] ?? 0);
+        if ($rollId > 0) {
+            foreach ($rollProducts as $product) {
+                if ((int) ($product['id'] ?? 0) === $rollId) {
+                    return $product;
+                }
+            }
+            $fromCatalog = $context['productsById'][$rollId] ?? null;
+            if (is_array($fromCatalog)) {
+                return $fromCatalog;
+            }
+        }
+
+        $rollName = trim((string) ($combination['roll'] ?? ''));
+        if ($rollName !== '') {
+            $matched = $this->matchNamedProduct($rollProducts, $rollName);
+            if ($matched) {
+                return $matched;
+            }
+            $needle = $this->normalizeLabel($rollName);
+            foreach ($context['productsById'] ?? [] as $product) {
+                if (! is_array($product)) {
+                    continue;
+                }
+                if ($this->normalizeLabel((string) ($product['name'] ?? '')) === $needle) {
+                    return $product;
+                }
+            }
+        }
+
         $protein = $this->normalizeLabel((string) ($combination['proteina'] ?? ''));
         if (str_contains($protein, 'MIXTO')) {
             $mixtos = $this->matchNamedProduct($rollProducts, 'MIXTOS');
@@ -604,6 +646,30 @@ class XetuxOrderService
         }
 
         return $rollProducts[0] ?? null;
+    }
+
+    /**
+     * La proteína (SOLO ATUN, SOLO POLLO, etc.) solo es un adicional de 10 ROLLS ESPECIALES.
+     * Las otras piezas de 10 rolls se envían como producto, sin ese adicional.
+     *
+     * @param  array<string, mixed>  $roll
+     * @param  array<string, mixed>  $row
+     */
+    protected function combinationUsesProteinAdditional(array $roll, array $row): bool
+    {
+        $rollName = trim((string) ($row['roll'] ?? ''));
+        if ($rollName !== '' || (int) ($row['roll_product_id'] ?? 0) > 0) {
+            $name = $rollName !== '' ? $rollName : (string) ($roll['name'] ?? '');
+
+            return $this->isEspecialesRollName($name);
+        }
+
+        return trim((string) ($row['proteina'] ?? '')) !== '';
+    }
+
+    protected function isEspecialesRollName(string $name): bool
+    {
+        return str_contains($this->normalizeLabel($name), 'ESPECIAL');
     }
 
     /**

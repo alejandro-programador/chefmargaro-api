@@ -85,7 +85,15 @@ class XetuxExtraCatalogueTest extends TestCase
                 'success' => true,
                 'data' => [
                     'families' => [],
-                    'products' => [],
+                    'products' => [
+                        ['id' => '61', 'name' => 'MIXTOS', 'sku' => 'XPRO2509000024', 'familyId' => '1'],
+                        ['id' => '53', 'name' => '10 ROLLS CAMARON-DINAMITA', 'sku' => 'XPRO2509000010', 'familyId' => '1'],
+                        ['id' => '39', 'name' => '10 ROLL CAMARON - CANGREJO', 'sku' => 'XPRO2509000001', 'familyId' => '1'],
+                        ['id' => '42', 'name' => '10 ROLLS ESPECIALES', 'sku' => 'XPRO2509000004', 'familyId' => '1'],
+                        ['id' => '49', 'name' => '20 ROLL DINAMITA - CAMARON', 'sku' => 'XPRO2509000006', 'familyId' => '1'],
+                        ['id' => '40', 'name' => '10 ROLL POLLO CRISPY Y DINAMITA', 'sku' => 'XPRO2509000002', 'familyId' => '1'],
+                        ['id' => '41', 'name' => '10 ROLL PASTA DE CANGREJO - CAMARON', 'sku' => 'XPRO2509000003', 'familyId' => '1'],
+                    ],
                     'categories' => [
                         ['id' => '1', 'name' => 'TEXTURA'],
                         ['id' => '2', 'name' => 'PROTEINA ROLLS ESPECIALES'],
@@ -119,6 +127,15 @@ class XetuxExtraCatalogueTest extends TestCase
         );
         $this->assertSame(['SOLO ATUN'], collect($response->json('data.proteinas'))->pluck('name')->all());
         $this->assertSame(['CON TODO'], collect($response->json('data.complementos'))->pluck('name')->all());
+        $this->assertSame([
+            '10 ROLL CAMARON - CANGREJO',
+            '10 ROLL POLLO CRISPY Y DINAMITA',
+            '10 ROLL PASTA DE CANGREJO - CAMARON',
+            '10 ROLLS CAMARON-DINAMITA',
+            '10 ROLLS ESPECIALES',
+        ], collect($response->json('data.rolls'))->pluck('name')->all());
+        $this->assertSame(39, $response->json('data.rolls.0.id'));
+        $this->assertSame('XPRO2509000004', $response->json('data.rolls.4.sku'));
     }
 
     public function test_legacy_catalogue_shape_still_lists_wakame(): void

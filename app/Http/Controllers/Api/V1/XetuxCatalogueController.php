@@ -64,7 +64,7 @@ class XetuxCatalogueController extends Controller
     }
 
     /**
-     * Textura, proteína y complemento para armar combinaciones de rolls.
+     * Textura, rolls, proteína de rolls especiales y complemento.
      */
     public function rollCombinationOptions(XetuxCatalogueService $xetux)
     {

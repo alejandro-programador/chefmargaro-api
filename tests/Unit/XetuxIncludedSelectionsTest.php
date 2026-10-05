@@ -124,4 +124,76 @@ class XetuxIncludedSelectionsTest extends TestCase
         $this->assertSame('FUJI', $line['products'][0]['product']['name']);
         $this->assertSame('XPRO2607000141', $line['products'][0]['product']['code']);
     }
+
+    public function test_selected_roll_is_sent_and_protein_only_on_especiales(): void
+    {
+        $service = new XetuxOrderService(new XetuxCatalogueService);
+        $camarones = ['id' => 39, 'name' => '10 ROLL CAMARON - CANGREJO', 'sku' => 'XPRO2509000001', 'combo' => false];
+        $especiales = ['id' => 42, 'name' => '10 ROLLS ESPECIALES', 'sku' => 'XPRO2509000004', 'combo' => false];
+        $combo = ['id' => 45, 'name' => 'COMBITO 20 ROLLS', 'sku' => 'XPROM2509000003', 'combo' => true];
+
+        $line = $service->mapComboBodyLine([
+            'xetux_product_id' => 45,
+            'name' => 'Combito 20 Rolls',
+            'quantity' => 1,
+            'unit_price' => 11,
+            'combinaciones' => [
+                [
+                    'textura' => 'FRIOS',
+                    'roll' => '10 ROLL CAMARON - CANGREJO',
+                    'roll_product_id' => 39,
+                    'proteina' => '',
+                    'complemento' => 'CON TODO',
+                ],
+                [
+                    'textura' => 'COMBINADO',
+                    'roll' => '10 ROLLS ESPECIALES',
+                    'roll_product_id' => 42,
+                    'proteina' => 'SOLO ATUN',
+                    'complemento' => 'SOLO AGUACATE',
+                ],
+            ],
+        ], [], [
+            'productsById' => [45 => $combo, 39 => $camarones, 42 => $especiales],
+            'additionalsByName' => [
+                'FRIOS' => ['id' => '1', 'name' => 'FRIOS', 'sku' => 'XMOD2509000001'],
+                'COMBINADO' => ['id' => '14', 'name' => 'COMBINADO', 'sku' => 'XMOD2509000014'],
+                'SOLO ATUN' => ['id' => '3', 'name' => 'SOLO ATUN', 'sku' => 'XMOD2509000005'],
+                'CON TODO' => ['id' => '8', 'name' => 'CON TODO', 'sku' => 'XMOD2509000010'],
+                'SOLO AGUACATE' => ['id' => '7', 'name' => 'SOLO AGUACATE', 'sku' => 'XMOD2509000008'],
+            ],
+            'categoryByAdditionalId' => [
+                '1' => ['id' => 1, 'name' => 'TEXTURA'],
+                '14' => ['id' => 1, 'name' => 'TEXTURA'],
+                '3' => ['id' => 2, 'name' => 'PROTEINA ROLLS ESPECIALES'],
+                '8' => ['id' => 3, 'name' => 'COMPLEMENTOS'],
+                '7' => ['id' => 3, 'name' => 'COMPLEMENTOS'],
+            ],
+            'promotions' => [
+                45 => [
+                    'rolls' => [$camarones, $especiales],
+                    'sauces' => [],
+                    'drinks' => [],
+                    'toppings' => [],
+                ],
+            ],
+        ]);
+
+        $this->assertSame(39, $line['products'][0]['id']);
+        $this->assertSame('10 ROLL CAMARON - CANGREJO', $line['products'][0]['product']['name']);
+        $this->assertSame(
+            ['FRIOS', 'CON TODO'],
+            collect($line['products'][0]['additionals'])->pluck('name')->all()
+        );
+
+        $this->assertSame(42, $line['products'][1]['id']);
+        $this->assertSame('10 ROLLS ESPECIALES', $line['products'][1]['product']['name']);
+        $this->assertSame(
+            ['COMBINADO', 'SOLO ATUN', 'SOLO AGUACATE'],
+            collect($line['products'][1]['additionals'])->pluck('name')->all()
+        );
+        $this->assertSame('PROTEINA ROLLS ESPECIALES', $line['products'][1]['additionals'][1]['categoryName']);
+        $this->assertStringContainsString('10 ROLL CAMARON - CANGREJO', $line['notes']);
+        $this->assertStringContainsString('SOLO ATUN', $line['notes']);
+    }
 }

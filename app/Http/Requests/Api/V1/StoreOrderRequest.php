@@ -41,6 +41,8 @@ class StoreOrderRequest extends FormRequest
             'order_items.*.quantity' => ['required', 'integer', 'min:1'],
             'order_items.*.combinaciones' => ['nullable', 'array'],
             'order_items.*.combinaciones.*.textura' => ['nullable', 'string'],
+            'order_items.*.combinaciones.*.roll' => ['nullable', 'string'],
+            'order_items.*.combinaciones.*.roll_product_id' => ['nullable', 'integer'],
             'order_items.*.combinaciones.*.proteina' => ['nullable', 'string'],
             'order_items.*.combinaciones.*.complemento' => ['nullable', 'string'],
         ];

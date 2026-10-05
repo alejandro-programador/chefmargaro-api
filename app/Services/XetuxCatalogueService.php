@@ -128,9 +128,28 @@ class XetuxCatalogueService
     }
 
     /**
-     * Texturas, proteínas y complementos del catálogo actual (categorías Xetux).
+     * Piezas de 10 rolls que el cliente puede elegir en cada combinación.
+     * El resto del catálogo de rolls (20, mixtos, etc.) no entra en este selector.
      *
-     * @return array{texturas: array<int, array{id: int, name: string}>, proteinas: array<int, array{id: int, name: string}>, complementos: array<int, array{id: int, name: string}>}
+     * @var array<int, string>
+     */
+    public const SELECTABLE_ROLL_NAMES = [
+        '10 ROLL CAMARON - CANGREJO',
+        '10 ROLL POLLO CRISPY Y DINAMITA',
+        '10 ROLL PASTA DE CANGREJO - CAMARON',
+        '10 ROLLS CAMARON-DINAMITA',
+        '10 ROLLS ESPECIALES',
+    ];
+
+    /**
+     * Texturas, rolls, proteínas de rolls especiales y complementos del catálogo Xetux.
+     *
+     * @return array{
+     *     texturas: array<int, array{id: int, name: string}>,
+     *     proteinas: array<int, array{id: int, name: string}>,
+     *     complementos: array<int, array{id: int, name: string}>,
+     *     rolls: array<int, array{id: int, name: string, sku: string}>
+     * }
      */
     public function rollCombinationOptions(): array
     {
@@ -175,7 +194,7 @@ class XetuxCatalogueService
             ];
         }
 
-        return collect($buckets)->map(function ($items) {
+        $options = collect($buckets)->map(function ($items) {
             return collect($items)
                 ->unique('name')
                 ->sortBy('position')
@@ -186,6 +205,72 @@ class XetuxCatalogueService
                 ->values()
                 ->all();
         })->all();
+
+        $options['rolls'] = $this->selectableRollProducts(
+            is_array($data['products'] ?? null) ? $data['products'] : []
+        );
+
+        return $options;
+    }
+
+    /**
+     * @param  array<int, mixed>  $products
+     * @return array<int, array{id: int, name: string, sku: string}>
+     */
+    protected function selectableRollProducts(array $products): array
+    {
+        $wanted = [];
+        foreach (self::SELECTABLE_ROLL_NAMES as $index => $name) {
+            $wanted[$this->normalizeCatalogLabel($name)] = $index;
+        }
+
+        $matched = [];
+        foreach ($products as $product) {
+            if (! is_array($product)) {
+                continue;
+            }
+            $name = trim((string) ($product['name'] ?? $product['productName'] ?? ''));
+            $key = $this->normalizeCatalogLabel($name);
+            if ($name === '' || ! array_key_exists($key, $wanted)) {
+                continue;
+            }
+            $id = (int) ($product['id'] ?? $product['productId'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $familyId = (int) ($product['familyId'] ?? 0);
+            if (isset($matched[$key]) && $familyId !== 1) {
+                continue;
+            }
+
+            $matched[$key] = [
+                'id' => $id,
+                'name' => $name,
+                'sku' => (string) ($product['sku'] ?? $product['itemCode'] ?? ''),
+                'position' => $wanted[$key],
+            ];
+        }
+
+        return collect($matched)
+            ->sortBy('position')
+            ->map(fn ($item) => [
+                'id' => $item['id'],
+                'name' => $item['name'],
+                'sku' => $item['sku'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function normalizeCatalogLabel(string $value): string
+    {
+        $value = strtoupper(trim($value));
+        $value = strtr($value, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ñ' => 'N', 'Ü' => 'U',
+            'á' => 'A', 'é' => 'E', 'í' => 'I', 'ó' => 'O', 'ú' => 'U', 'ñ' => 'N', 'ü' => 'U',
+        ]);
+
+        return trim((string) preg_replace('/[^A-Z0-9]+/', ' ', $value));
     }
 
     protected function rollOptionBucket(string $categoryName): ?string
