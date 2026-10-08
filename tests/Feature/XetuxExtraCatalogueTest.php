@@ -122,8 +122,13 @@ class XetuxExtraCatalogueTest extends TestCase
 
         $response->assertOk();
         $this->assertSame(
-            ['COMBINADO', 'FRIOS'],
+            ['FRIOS'],
             collect($response->json('data.texturas'))->pluck('name')->all()
+        );
+        $this->assertFalse(
+            collect($response->json('data.texturas'))->pluck('name')->contains(
+                fn ($name) => str_contains(strtoupper((string) $name), 'COMBINADO')
+            )
         );
         $this->assertSame(['SOLO ATUN'], collect($response->json('data.proteinas'))->pluck('name')->all());
         $this->assertSame(['CON TODO'], collect($response->json('data.complementos'))->pluck('name')->all());

@@ -210,6 +210,15 @@ class XetuxCatalogueService
             is_array($data['products'] ?? null) ? $data['products'] : []
         );
 
+        // COMBINADO no es una textura que el cliente pueda elegir.
+        $options['texturas'] = array_values(array_filter(
+            $options['texturas'],
+            fn ($item) => ! str_contains(
+                $this->normalizeCatalogLabel((string) ($item['name'] ?? '')),
+                'COMBINADO'
+            )
+        ));
+
         return $options;
     }
 
