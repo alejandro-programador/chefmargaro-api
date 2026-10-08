@@ -13,6 +13,15 @@ return [
     // Bebidas elegibles como incluidas en combos (aguas, té, jugos, refrescos).
     'included_drink_family_ids' => [2, 4, 5, 30, 31],
 
+    // Un extra por familia: el cliente elige el sabor (producto) al agregarlo.
+    'drink_extra_families' => [
+        2 => ['title' => 'Agua', 'description' => 'Elige el agua.'],
+        4 => ['title' => 'Té', 'description' => 'Elige el té.'],
+        31 => ['title' => 'Refresco 1L', 'description' => 'Elige el refresco de 1 litro.'],
+        30 => ['title' => 'Refresco 1.5L', 'description' => 'Elige el refresco de 1.5 litros.'],
+        5 => ['title' => 'Jugos', 'description' => 'Elige el jugo.'],
+    ],
+
     'send_url' => env(
         'XETUX_SEND_URL',
         'https://chefmargaroprueba.xetux.net.xetux.online/xspos/api/XPosXPedidos/Send'

@@ -48,6 +48,8 @@ class StoreCheckoutOrderRequest extends FormRequest
             'cart_lines.*.unit_price' => ['required', 'numeric', 'min:0'],
             'cart_lines.*.combo_id' => ['nullable', 'integer', 'exists:combos,combo_id'],
             'cart_lines.*.extra_id' => ['nullable', 'integer', 'exists:extras,extra_id'],
+            'cart_lines.*.xetux_product_id' => ['nullable', 'integer', 'min:1'],
+            'cart_lines.*.xetux_item_id' => ['nullable', 'integer', 'min:1'],
             'cart_lines.*.product_id' => ['nullable', 'integer', 'exists:products,product_id'],
             'cart_lines.*.cart_key' => ['nullable', 'string', 'max:255'],
             'cart_lines.*.parent_combo_id' => ['nullable', 'integer'],

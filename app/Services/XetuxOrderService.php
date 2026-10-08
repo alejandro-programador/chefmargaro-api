@@ -975,7 +975,9 @@ class XetuxOrderService
             }
             if ($type === 'extra' && ! empty($line['extra_id'])) {
                 $extra = Extra::find((int) $line['extra_id']);
-                if ($extra) {
+                if ($extra && $extra->isDrinkFamily()) {
+                    $line = $this->applyDrinkFamilyLine($line, $extra);
+                } elseif ($extra) {
                     $line['xetux_product_id'] = $extra->xetux_product_id;
                     $line['xetux_item_id'] = $extra->xetux_item_id;
                 }
@@ -1052,14 +1054,19 @@ class XetuxOrderService
 
             if ($item->extra_id) {
                 $extra = $item->extra;
+                $flavor = $this->storedExtraFlavor($item->combinaciones);
                 $lines[] = [
                     'type' => 'extra',
                     'extra_id' => (int) $item->extra_id,
-                    'name' => $extra?->title ?? 'Extra',
+                    'name' => ($flavor['product_name'] ?? '') !== ''
+                        ? (string) $flavor['product_name']
+                        : ($extra?->title ?? 'Extra'),
                     'quantity' => (int) $item->quantity,
-                    'unit_price' => (float) ($extra?->price_eur ?? 0),
-                    'xetux_product_id' => $extra?->xetux_product_id,
-                    'xetux_item_id' => $extra?->xetux_item_id,
+                    'unit_price' => array_key_exists('unit_price', $flavor) && $flavor['unit_price'] !== null
+                        ? (float) $flavor['unit_price']
+                        : (float) ($extra?->price_eur ?? 0),
+                    'xetux_product_id' => $flavor['xetux_product_id'] ?? $extra?->xetux_product_id,
+                    'xetux_item_id' => $flavor['xetux_item_id'] ?? $extra?->xetux_item_id,
                 ];
                 continue;
             }
@@ -1077,6 +1084,82 @@ class XetuxOrderService
         }
 
         return $lines;
+    }
+
+    /**
+     * El sabor elegido queda en el pedido para el envío a Xetux al aceptar el pago.
+     *
+     * @param  array<string, mixed>  $line
+     * @return array<string, mixed>
+     */
+    protected function applyDrinkFamilyLine(array $line, Extra $extra): array
+    {
+        $familyId = (int) $extra->xetux_family_id;
+        $selectedId = (int) ($line['xetux_product_id'] ?? 0);
+        $title = (string) ($extra->title ?: 'Bebida');
+
+        if ($selectedId <= 0) {
+            throw new RuntimeException('El extra «'.$title.'» necesita un sabor.');
+        }
+
+        $catalogueUnavailable = false;
+        try {
+            $flavor = $this->catalogue->findFamilyFlavor($familyId, $selectedId);
+        } catch (RuntimeException) {
+            $flavor = null;
+            $catalogueUnavailable = true;
+        }
+
+        if (! $catalogueUnavailable && $flavor === null) {
+            throw new RuntimeException('El sabor elegido no pertenece a «'.$title.'».');
+        }
+
+        if (is_array($flavor)) {
+            $line['xetux_product_id'] = (int) $flavor['product_id'];
+            $line['xetux_item_id'] = (int) $flavor['item_id'];
+            $line['name'] = trim($title.' — '.$flavor['name']);
+            if ((float) ($line['unit_price'] ?? 0) <= 0) {
+                $line['unit_price'] = (float) $flavor['price'];
+            }
+        }
+
+        $line['flavor'] = [
+            'kind' => 'flavor',
+            'product_name' => (string) ($flavor['name'] ?? $line['name'] ?? $title),
+            'xetux_product_id' => (int) ($line['xetux_product_id'] ?? $selectedId),
+            'xetux_item_id' => (int) ($line['xetux_item_id'] ?? 0) ?: null,
+            'unit_price' => round((float) ($line['unit_price'] ?? 0), 2),
+        ];
+
+        return $line;
+    }
+
+    /**
+     * @return array{product_name?: string, xetux_product_id?: int|null, xetux_item_id?: int|null, unit_price?: float|null}
+     */
+    protected function storedExtraFlavor(mixed $stored): array
+    {
+        if (! is_array($stored) || $stored === []) {
+            return [];
+        }
+
+        $isRow = isset($stored['kind']) || isset($stored['xetux_product_id']);
+        $rows = $isRow ? [$stored] : array_values($stored);
+
+        foreach ($rows as $row) {
+            if (! is_array($row) || (string) ($row['kind'] ?? '') !== 'flavor') {
+                continue;
+            }
+
+            return [
+                'product_name' => (string) ($row['product_name'] ?? ''),
+                'xetux_product_id' => (int) ($row['xetux_product_id'] ?? 0) ?: null,
+                'xetux_item_id' => (int) ($row['xetux_item_id'] ?? 0) ?: null,
+                'unit_price' => array_key_exists('unit_price', $row) ? (float) $row['unit_price'] : null,
+            ];
+        }
+
+        return [];
     }
 
     /**

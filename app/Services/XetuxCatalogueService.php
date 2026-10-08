@@ -460,4 +460,80 @@ class XetuxCatalogueService
             ->values()
             ->all();
     }
+
+    /**
+     * Sabores (productos) de una familia de bebidas del catálogo actual.
+     *
+     * @param  array<string, mixed>|null  $catalogue
+     * @return array<int, array{product_id: int, item_id: int, name: string, sku: string, price: float}>
+     */
+    public function flavorsForFamily(int $familyId, ?array $catalogue = null): array
+    {
+        if ($familyId <= 0 || ! array_key_exists($familyId, config('xetux.drink_extra_families', []))) {
+            return [];
+        }
+
+        $catalogue ??= $this->fetchCatalogue();
+
+        $items = collect($catalogue['productList'] ?? [])
+            ->filter(fn ($product) => (int) ($product['familyId'] ?? 0) === $familyId)
+            ->map(function ($product) {
+                $description = trim((string) ($product['productDescription'] ?? ''));
+                $name = trim((string) ($product['productName'] ?? ''));
+                $label = $description !== '' ? $description : $name;
+                $productId = (int) ($product['productId'] ?? 0);
+
+                return [
+                    'product_id' => $productId,
+                    'item_id' => (int) ($product['itemId'] ?? $productId),
+                    'label' => $label !== '' ? $label : 'Producto '.$productId,
+                    'sku' => trim((string) ($product['itemCode'] ?? '')),
+                    'price' => round((float) ($product['productSalePriceBaseWithTax'] ?? 0), 2),
+                ];
+            })
+            ->filter(fn ($product) => $product['product_id'] > 0)
+            ->unique('product_id')
+            ->values();
+
+        $counts = $items->countBy('label');
+
+        return $items
+            ->map(function ($item) use ($counts) {
+                $label = $item['label'];
+                if (($counts[$label] ?? 0) > 1) {
+                    $suffix = $item['sku'] !== '' ? $item['sku'] : '#'.$item['product_id'];
+                    $label .= ' ('.$suffix.')';
+                }
+
+                return [
+                    'product_id' => $item['product_id'],
+                    'item_id' => $item['item_id'],
+                    'name' => $label,
+                    'sku' => $item['sku'],
+                    'price' => $item['price'],
+                ];
+            })
+            ->sortBy('name')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $catalogue
+     * @return array{product_id: int, item_id: int, name: string, sku: string, price: float}|null
+     */
+    public function findFamilyFlavor(int $familyId, int $productId, ?array $catalogue = null): ?array
+    {
+        if ($productId <= 0) {
+            return null;
+        }
+
+        foreach ($this->flavorsForFamily($familyId, $catalogue) as $flavor) {
+            if ((int) $flavor['product_id'] === $productId) {
+                return $flavor;
+            }
+        }
+
+        return null;
+    }
 }

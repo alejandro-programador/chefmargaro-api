@@ -22,6 +22,11 @@ class ExtraResource extends JsonResource
             'xetux_product_id' => $this->xetux_product_id,
             'xetux_item_id' => $this->xetux_item_id,
             'xetux_family_id' => $this->xetux_family_id,
+            'xetux_family_name' => $this->isDrinkFamily()
+                ? (config('xetux.drink_extra_families')[(int) $this->xetux_family_id]['title'] ?? null)
+                : null,
+            'requires_flavor' => $this->isDrinkFamily(),
+            'flavors' => $this->flavorOptions,
             'title' => $this->title,
             'name' => $this->title, // Alias para compatibilidad con el frontend
             'description' => $this->description,

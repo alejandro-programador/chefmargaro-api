@@ -234,6 +234,9 @@ class CheckoutOrderController extends Controller
             }
         } elseif ($type === 'extra') {
             $item['extra_id'] = (int) $line['extra_id'];
+            if (! empty($line['flavor']) && is_array($line['flavor'])) {
+                $item['combinaciones'] = [$line['flavor']];
+            }
         } elseif ($type === 'product') {
             $item['product_id'] = (int) ($line['product_id'] ?? 0) ?: null;
         }

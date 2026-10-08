@@ -9,13 +9,15 @@ use App\Services\XetuxCatalogueService;
 use App\Support\BranchScope;
 use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class ExtraController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, XetuxCatalogueService $xetux)
     {
         $query = Extra::query();
 
@@ -43,23 +45,81 @@ class ExtraController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
-        return ExtraResource::collection($query->paginate($perPage));
+        $extras = $query->paginate($perPage);
+        $this->attachDrinkFlavors($extras->getCollection(), $xetux);
+
+        return ExtraResource::collection($extras);
+    }
+
+    /**
+     * Crea un extra por cada familia de bebida (Agua, Té, refrescos y jugos).
+     */
+    public function syncDrinkFamilies(XetuxCatalogueService $xetux)
+    {
+        try {
+            $catalogue = $xetux->fetchCatalogue();
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 502);
+        }
+
+        $extras = collect();
+        foreach (config('xetux.drink_extra_families', []) as $familyId => $meta) {
+            $familyId = (int) $familyId;
+            $flavors = $xetux->flavorsForFamily($familyId, $catalogue);
+            $extra = Extra::query()
+                ->whereNull('xetux_product_id')
+                ->where('xetux_family_id', $familyId)
+                ->first();
+
+            if (! $extra) {
+                $minPrice = collect($flavors)->min('price');
+                $extra = Extra::create([
+                    'branch_id' => null,
+                    'title' => (string) ($meta['title'] ?? 'Bebida'),
+                    'description' => (string) ($meta['description'] ?? 'Elige el sabor.'),
+                    'price_eur' => $minPrice !== null ? round((float) $minPrice, 2) : 0,
+                    'quantity' => 1,
+                    'is_active' => true,
+                    'xetux_product_id' => null,
+                    'xetux_item_id' => null,
+                    'xetux_family_id' => $familyId,
+                ]);
+            }
+
+            $extra->flavorOptions = $flavors;
+            $extras->push($extra);
+        }
+
+        return response()->json([
+            'message' => 'Extras de bebidas listos',
+            'data' => ExtraResource::collection($extras),
+        ]);
     }
 
     public function store(Request $request, XetuxCatalogueService $xetux)
     {
-        $data = $request->validate([
+        $isFamily = $request->filled('xetux_family_id');
+        $rules = [
             'branch_id' => ['nullable', 'integer', 'exists:branches,branch_id'],
             'title' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'price_eur' => ['required', 'numeric', 'min:0'],
             'quantity' => ['sometimes', 'integer', 'min:1'],
             'is_active' => ['sometimes', 'boolean'],
-            'xetux_product_id' => ['required', 'integer', Rule::unique('extras', 'xetux_product_id')],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
-        ]);
+        ];
+        if ($isFamily) {
+            $rules['xetux_family_id'] = ['required', 'integer'];
+        } else {
+            $rules['xetux_product_id'] = ['required', 'integer', Rule::unique('extras', 'xetux_product_id')];
+        }
 
-        $data = array_merge($data, $this->resolveXetuxFields($xetux, (int) $data['xetux_product_id']));
+        $data = $request->validate($rules);
+        $data = array_merge($data, $isFamily
+            ? $this->resolveFamilyFields($xetux, (int) $data['xetux_family_id'])
+            : $this->resolveXetuxFields($xetux, (int) $data['xetux_product_id']));
 
         if ($request->hasFile('image')) {
             $imagePath = $request->file('image')->store('extras', 'public');
@@ -73,13 +133,14 @@ class ExtraController extends Controller
         ], 201);
     }
 
-    public function show(Request $request, Extra $extra)
+    public function show(Request $request, Extra $extra, XetuxCatalogueService $xetux)
     {
         $branchId = BranchScope::requestedBranchId($request);
         if ($branchId !== null && $extra->branch_id !== null && (int) $extra->branch_id !== $branchId) {
             abort(404);
         }
         $extra->load('products');
+        $this->attachDrinkFlavors(collect([$extra]), $xetux);
         return new ExtraResource($extra);
     }
 
@@ -89,22 +150,34 @@ class ExtraController extends Controller
         if ($branchId !== null && $extra->branch_id !== null && (int) $extra->branch_id !== $branchId) {
             abort(404);
         }
-        $data = $request->validate([
+        $isFamily = $request->filled('xetux_family_id');
+        $rules = [
             'branch_id' => ['nullable', 'integer', 'exists:branches,branch_id'],
             'title' => ['sometimes', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'price_eur' => ['sometimes', 'numeric', 'min:0'],
             'quantity' => ['sometimes', 'integer', 'min:1'],
             'is_active' => ['sometimes', 'boolean'],
-            'xetux_product_id' => [
+            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
+        ];
+        if ($isFamily) {
+            $rules['xetux_family_id'] = ['required', 'integer'];
+        } else {
+            $rules['xetux_product_id'] = [
                 'sometimes',
                 'integer',
                 Rule::unique('extras', 'xetux_product_id')->ignore($extra->extra_id, 'extra_id'),
-            ],
-            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
-        ]);
+            ];
+        }
 
-        if (array_key_exists('xetux_product_id', $data)) {
+        $data = $request->validate($rules);
+
+        if ($isFamily) {
+            $data = array_merge(
+                $data,
+                $this->resolveFamilyFields($xetux, (int) $data['xetux_family_id'], $extra->extra_id)
+            );
+        } elseif (array_key_exists('xetux_product_id', $data)) {
             $data = array_merge(
                 $data,
                 $this->resolveXetuxFields($xetux, (int) $data['xetux_product_id'], $extra->extra_id)
@@ -169,5 +242,73 @@ class ExtraController extends Controller
             'xetux_item_id' => (int) $match['item_id'],
             'xetux_family_id' => (int) $match['family_id'],
         ];
+    }
+
+    /**
+     * @return array{xetux_product_id: null, xetux_item_id: null, xetux_family_id: int}
+     */
+    protected function resolveFamilyFields(
+        XetuxCatalogueService $xetux,
+        int $familyId,
+        ?int $excludeExtraId = null
+    ): array {
+        if (! array_key_exists($familyId, config('xetux.drink_extra_families', []))) {
+            throw ValidationException::withMessages([
+                'xetux_family_id' => ['Esa familia no está habilitada como extra de bebida.'],
+            ]);
+        }
+
+        $alreadyLinked = Extra::query()
+            ->whereNull('xetux_product_id')
+            ->where('xetux_family_id', $familyId)
+            ->when($excludeExtraId !== null, fn ($query) => $query->where('extra_id', '!=', $excludeExtraId))
+            ->exists();
+
+        if ($alreadyLinked) {
+            throw ValidationException::withMessages([
+                'xetux_family_id' => ['Esa familia ya tiene un extra de bebida.'],
+            ]);
+        }
+
+        try {
+            $flavors = $xetux->flavorsForFamily($familyId);
+        } catch (RuntimeException $e) {
+            throw ValidationException::withMessages([
+                'xetux_family_id' => [$e->getMessage()],
+            ]);
+        }
+
+        if ($flavors === []) {
+            throw ValidationException::withMessages([
+                'xetux_family_id' => ['Esa familia no tiene productos en el catálogo de Xetux.'],
+            ]);
+        }
+
+        return [
+            'xetux_product_id' => null,
+            'xetux_item_id' => null,
+            'xetux_family_id' => $familyId,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Extra>  $extras
+     */
+    protected function attachDrinkFlavors(Collection $extras, XetuxCatalogueService $xetux): void
+    {
+        $familyExtras = $extras->filter(fn (Extra $extra) => $extra->isDrinkFamily());
+        if ($familyExtras->isEmpty()) {
+            return;
+        }
+
+        try {
+            $catalogue = $xetux->fetchCatalogue();
+        } catch (RuntimeException) {
+            return;
+        }
+
+        foreach ($familyExtras as $extra) {
+            $extra->flavorOptions = $xetux->flavorsForFamily((int) $extra->xetux_family_id, $catalogue);
+        }
     }
 }

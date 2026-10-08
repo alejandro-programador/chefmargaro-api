@@ -40,6 +40,13 @@ class Extra extends Model
     ];
 
     /**
+     * Sabores del catálogo cuando el extra representa una familia de bebidas.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public array $flavorOptions = [];
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -79,6 +86,20 @@ class Extra extends Model
         return $this->belongsToMany(Combo::class, 'combo_extra', 'extra_id', 'combo_id')
             ->withPivot('sort_order')
             ->orderBy('sort_order');
+    }
+
+    /**
+     * Extra de bebida por familia: el producto Xetux se elige al pedir el sabor.
+     */
+    public function isDrinkFamily(): bool
+    {
+        if ($this->xetux_product_id) {
+            return false;
+        }
+
+        $familyId = (int) $this->xetux_family_id;
+
+        return $familyId > 0 && array_key_exists($familyId, config('xetux.drink_extra_families', []));
     }
 }
 

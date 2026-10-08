@@ -44,6 +44,7 @@ Route::prefix('v1')->group(function () {
     Route::put('products/{product}/extras', [ProductController::class, 'syncExtras']);
     
     // Extras
+    Route::post('extras/sync-drink-families', [ExtraController::class, 'syncDrinkFamilies']);
     Route::apiResource('extras', ExtraController::class);
     
     // Combos
