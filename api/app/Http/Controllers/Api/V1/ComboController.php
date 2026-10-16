@@ -92,13 +92,14 @@ class ComboController extends Controller
         ], 201);
     }
 
-    public function show(Combo $combo)
+    public function show(Combo $combo, XetuxCatalogueService $xetux)
     {
         $branchId = BranchScope::requestedBranchId();
         if ($branchId !== null && $combo->branch_id !== null && (int) $combo->branch_id !== $branchId) {
             abort(404);
         }
         $combo->load(['branch', 'extras', 'includedGroups.products']);
+        $xetux->applyDisplayedPrices($combo->extras);
         return new ComboResource($combo);
     }
 

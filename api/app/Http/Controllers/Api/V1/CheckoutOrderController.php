@@ -229,8 +229,22 @@ class CheckoutOrderController extends Controller
 
         if ($type === 'combo') {
             $item['combo_id'] = (int) $line['combo_id'];
-            if (! empty($line['combinaciones'])) {
-                $item['combinaciones'] = $line['combinaciones'];
+            $rows = is_array($line['combinaciones'] ?? null) ? $line['combinaciones'] : [];
+            $preferences = ['kind' => 'roll_preferences'];
+            $hasPreferences = false;
+            if (array_key_exists('rollsConSesamo', $line)) {
+                $preferences['rollsConSesamo'] = $line['rollsConSesamo'];
+                $hasPreferences = true;
+            }
+            if (array_key_exists('rollsConQuesoCremaCebollin', $line)) {
+                $preferences['rollsConQuesoCremaCebollin'] = $line['rollsConQuesoCremaCebollin'];
+                $hasPreferences = true;
+            }
+            if ($hasPreferences) {
+                $rows[] = $preferences;
+            }
+            if ($rows !== []) {
+                $item['combinaciones'] = $rows;
             }
         } elseif ($type === 'extra') {
             $item['extra_id'] = (int) $line['extra_id'];

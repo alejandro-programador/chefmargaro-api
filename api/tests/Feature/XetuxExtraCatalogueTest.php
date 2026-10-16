@@ -50,10 +50,9 @@ class XetuxExtraCatalogueTest extends TestCase
             fn ($product) => $product['family_name'] === 'Complementos'
                 && $product['product_name'] === 'WASABI Y GENGIBRE'
         ));
-        $this->assertTrue($products->contains(
-            fn ($product) => $product['family_name'] === 'Postres'
-                && $product['product_name'] === 'BROWNIE CHOCO CHOCO X UNID'
-        ));
+        $brownie = $products->firstWhere('product_name', 'BROWNIE CHOCO CHOCO X UNID');
+        $this->assertNotNull($brownie);
+        $this->assertSame(1.5, $brownie['price_usd']);
         $ketchup = $products->firstWhere('product_id', 73);
         $this->assertNotNull($ketchup);
         $this->assertSame('EXTRA DE SALSA KETCHUP', $ketchup['product_name']);

@@ -9,7 +9,6 @@ use App\Services\XetuxCatalogueService;
 use App\Support\BranchScope;
 use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -46,7 +45,7 @@ class ExtraController extends Controller
 
         $perPage = $request->get('per_page', 15);
         $extras = $query->paginate($perPage);
-        $this->attachDrinkFlavors($extras->getCollection(), $xetux);
+        $xetux->applyDisplayedPrices($extras->getCollection());
 
         return ExtraResource::collection($extras);
     }
@@ -140,7 +139,7 @@ class ExtraController extends Controller
             abort(404);
         }
         $extra->load('products');
-        $this->attachDrinkFlavors(collect([$extra]), $xetux);
+        $xetux->applyDisplayedPrices(collect([$extra]));
         return new ExtraResource($extra);
     }
 
@@ -289,26 +288,5 @@ class ExtraController extends Controller
             'xetux_item_id' => null,
             'xetux_family_id' => $familyId,
         ];
-    }
-
-    /**
-     * @param  Collection<int, Extra>  $extras
-     */
-    protected function attachDrinkFlavors(Collection $extras, XetuxCatalogueService $xetux): void
-    {
-        $familyExtras = $extras->filter(fn (Extra $extra) => $extra->isDrinkFamily());
-        if ($familyExtras->isEmpty()) {
-            return;
-        }
-
-        try {
-            $catalogue = $xetux->fetchCatalogue();
-        } catch (RuntimeException) {
-            return;
-        }
-
-        foreach ($familyExtras as $extra) {
-            $extra->flavorOptions = $xetux->flavorsForFamily((int) $extra->xetux_family_id, $catalogue);
-        }
     }
 }

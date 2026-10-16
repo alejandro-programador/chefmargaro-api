@@ -30,9 +30,8 @@ class XetuxOrderService
         $tracking = $this->generateTrackingCode();
         $createdAt = now()->getTimestampMs();
         $subtotal = round((float) $order->total_amount, 2);
-        $taxRate = (float) config('xetux.tax_rate', 0.16);
-        $tax = round($subtotal * $taxRate, 2);
-        $total = round($subtotal + $tax, 2);
+        $tax = 0.0;
+        $total = $subtotal;
 
         $nameParts = preg_split('/\s+/', trim($customer->name), 2);
         $firstName = $nameParts[0] ?? 'Cliente';
@@ -45,6 +44,7 @@ class XetuxOrderService
         if ($checkoutMeta['reference_point'] ?? null) {
             $notes = trim($notes."\nReferencia: ".$checkoutMeta['reference_point']);
         }
+        $notes = $this->appendRollPreferenceNotes($notes, $cartLines);
 
         $deliveryType = strtolower((string) ($checkoutMeta['delivery_type'] ?? $order->delivery_type ?? 'pickup'));
         $isPickup = $deliveryType !== 'delivery';
@@ -219,6 +219,9 @@ class XetuxOrderService
                 continue;
             }
             $kind = (string) ($row['kind'] ?? '');
+            if ($kind === 'roll_preferences') {
+                continue;
+            }
             if ($kind === 'sauce') {
                 $name = trim((string) ($row['proteina'] ?? $row['product_name'] ?? ''));
                 $qty = max(1, (int) ($row['quantity'] ?? 1));
@@ -374,7 +377,7 @@ class XetuxOrderService
                 continue;
             }
             $kind = (string) ($row['kind'] ?? '');
-            if ($kind === 'sauce' || $kind === 'drink') {
+            if ($kind === 'sauce' || $kind === 'drink' || $kind === 'roll_preferences') {
                 continue;
             }
             $rows[] = $row;
@@ -484,7 +487,7 @@ class XetuxOrderService
                 continue;
             }
             $kind = (string) ($row['kind'] ?? '');
-            if ($kind === 'sauce' || $kind === 'drink') {
+            if ($kind === 'sauce' || $kind === 'drink' || $kind === 'roll_preferences') {
                 continue;
             }
             if ($this->normalizeLabel((string) ($row['textura'] ?? '')) === 'TOPPING') {
@@ -576,22 +579,61 @@ class XetuxOrderService
     protected function comboLineNotes(array $comboLine): string
     {
         $notes = $this->combinacionesToNotes($comboLine['combinaciones'] ?? []);
-        $extra = [];
-        if (array_key_exists('rollsConSesamo', $comboLine) && $comboLine['rollsConSesamo'] !== null) {
-            $extra[] = $comboLine['rollsConSesamo']
-                ? 'Confirmo que deseo los rolls con sésamo.'
-                : 'Sin sésamo.';
-        }
-        if (array_key_exists('rollsConQuesoCremaCebollin', $comboLine) && $comboLine['rollsConQuesoCremaCebollin'] !== null) {
-            $extra[] = $comboLine['rollsConQuesoCremaCebollin']
-                ? 'Confirmo que deseo los rolls con queso crema y cebollín.'
-                : 'Sin queso crema y cebollín.';
-        }
+        $extra = $this->rollPreferencePhrases($comboLine);
         if ($extra === []) {
             return $notes;
         }
 
         return trim($notes.' | '.implode(' | ', $extra), ' |');
+    }
+
+    /**
+     * Avisos de cocina: roll frío con o sin sésamo, y roll sin queso crema ni cebollín.
+     *
+     * @param  array<string, mixed>  $comboLine
+     * @return array<int, string>
+     */
+    protected function rollPreferencePhrases(array $comboLine): array
+    {
+        $extra = [];
+        if (array_key_exists('rollsConSesamo', $comboLine) && $comboLine['rollsConSesamo'] !== null) {
+            $extra[] = $comboLine['rollsConSesamo']
+                ? 'Roll frío con sésamo.'
+                : 'Roll frío sin sésamo.';
+        }
+        if (
+            array_key_exists('rollsConQuesoCremaCebollin', $comboLine)
+            && $comboLine['rollsConQuesoCremaCebollin'] === false
+        ) {
+            $extra[] = 'Hacer el roll sin cebollín ni queso crema.';
+        }
+
+        return $extra;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $cartLines
+     */
+    protected function appendRollPreferenceNotes(string $notes, array $cartLines): string
+    {
+        $chunks = [];
+        foreach ($cartLines as $line) {
+            if (($line['type'] ?? '') !== 'combo' || ! is_array($line)) {
+                continue;
+            }
+            $phrases = $this->rollPreferencePhrases($line);
+            if ($phrases === []) {
+                continue;
+            }
+            $name = trim((string) ($line['name'] ?? 'Combo'));
+            $chunks[] = ($name !== '' ? $name.': ' : '').implode(' ', $phrases);
+        }
+
+        if ($chunks === []) {
+            return $notes;
+        }
+
+        return trim($notes."\n".implode("\n", $chunks));
     }
 
     /**
@@ -980,6 +1022,10 @@ class XetuxOrderService
                 } elseif ($extra) {
                     $line['xetux_product_id'] = $extra->xetux_product_id;
                     $line['xetux_item_id'] = $extra->xetux_item_id;
+                    $catalogPrice = $this->catalogSalePrice((int) $extra->xetux_product_id);
+                    if ($catalogPrice !== null) {
+                        $line['unit_price'] = $catalogPrice;
+                    }
                 }
             }
 
@@ -1037,9 +1083,9 @@ class XetuxOrderService
 
         foreach ($order->orderItems as $item) {
             if ($item->combo_id) {
-                [$combinaciones, $sauces, $drink] = $this->splitStoredCombinaciones($item->combinaciones);
+                [$combinaciones, $sauces, $drink, $preferences] = $this->splitStoredCombinaciones($item->combinaciones);
                 $combo = $item->combo;
-                $lines[] = [
+                $comboLine = [
                     'type' => 'combo',
                     'combo_id' => (int) $item->combo_id,
                     'name' => $combo?->name,
@@ -1049,6 +1095,13 @@ class XetuxOrderService
                     'included_sauces' => $sauces,
                     'included_drink' => $drink,
                 ];
+                if (array_key_exists('rollsConSesamo', $preferences)) {
+                    $comboLine['rollsConSesamo'] = $preferences['rollsConSesamo'];
+                }
+                if (array_key_exists('rollsConQuesoCremaCebollin', $preferences)) {
+                    $comboLine['rollsConQuesoCremaCebollin'] = $preferences['rollsConQuesoCremaCebollin'];
+                }
+                $lines[] = $comboLine;
                 continue;
             }
 
@@ -1118,9 +1171,7 @@ class XetuxOrderService
             $line['xetux_product_id'] = (int) $flavor['product_id'];
             $line['xetux_item_id'] = (int) $flavor['item_id'];
             $line['name'] = trim($title.' — '.$flavor['name']);
-            if ((float) ($line['unit_price'] ?? 0) <= 0) {
-                $line['unit_price'] = (float) $flavor['price'];
-            }
+            $line['unit_price'] = (float) $flavor['price'];
         }
 
         $line['flavor'] = [
@@ -1163,7 +1214,7 @@ class XetuxOrderService
     }
 
     /**
-     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, mixed>>, 2: array<string, mixed>|null}
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, mixed>>, 2: array<string, mixed>|null, 3: array<string, mixed>}
      */
     protected function splitStoredCombinaciones(mixed $stored): array
     {
@@ -1176,12 +1227,22 @@ class XetuxOrderService
         $combinaciones = [];
         $sauces = [];
         $drink = null;
+        $preferences = [];
 
         foreach ($rows as $row) {
             if (! is_array($row)) {
                 continue;
             }
             $kind = (string) ($row['kind'] ?? '');
+            if ($kind === 'roll_preferences') {
+                if (array_key_exists('rollsConSesamo', $row)) {
+                    $preferences['rollsConSesamo'] = $row['rollsConSesamo'];
+                }
+                if (array_key_exists('rollsConQuesoCremaCebollin', $row)) {
+                    $preferences['rollsConQuesoCremaCebollin'] = $row['rollsConQuesoCremaCebollin'];
+                }
+                continue;
+            }
             if ($kind === 'sauce') {
                 $sauces[] = [
                     'product_name' => (string) ($row['proteina'] ?? $row['product_name'] ?? ''),
@@ -1203,6 +1264,19 @@ class XetuxOrderService
             $combinaciones[] = $row;
         }
 
-        return [$combinaciones, $sauces, $drink];
+        return [$combinaciones, $sauces, $drink, $preferences];
+    }
+
+    protected function catalogSalePrice(int $productId): ?float
+    {
+        if ($productId <= 0) {
+            return null;
+        }
+
+        try {
+            return $this->catalogue->salePriceForProductId($productId);
+        } catch (RuntimeException) {
+            return null;
+        }
     }
 }

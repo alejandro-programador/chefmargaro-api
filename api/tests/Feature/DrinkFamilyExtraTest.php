@@ -51,10 +51,14 @@ class DrinkFamilyExtraTest extends TestCase
 
         $this->assertCount(2, $nevada);
         $this->assertSame('XPROD200001', $nevada[0]['sku']);
-        $this->assertSame(0.86, $nevada[0]['price']);
+        $this->assertSame(1.0, $nevada[0]['price']);
         $this->assertTrue(collect($flavors)->contains(
             fn ($flavor) => $flavor['product_id'] === 2 && $flavor['name'] === 'AGUA MINALBA 600ML'
         ));
+        $gas = collect($flavors)->firstWhere('product_id', 66);
+        $this->assertNotNull($gas);
+        $this->assertSame('Agua gasificada 1.5L', $gas['name']);
+        $this->assertSame(2.0, $gas['price']);
         $this->assertSame([], app(XetuxCatalogueService::class)->flavorsForFamily(99));
     }
 
@@ -88,7 +92,7 @@ class DrinkFamilyExtraTest extends TestCase
 
         $this->assertSame(2, $body[0]['product']['id']);
         $this->assertSame('AGUA MINALBA 600ML', $body[0]['product']['name']);
-        $this->assertSame(0.86, $body[0]['price']);
+        $this->assertSame(1.0, $body[0]['price']);
     }
 
     public function test_flavor_from_another_family_is_rejected(): void
@@ -184,6 +188,14 @@ class DrinkFamilyExtraTest extends TestCase
                         'sku' => 'XPROD200002',
                         'familyId' => '2',
                         'priceNet' => '0.86206897',
+                    ],
+                    [
+                        'id' => '66',
+                        'name' => 'AGUA NEVADA 600 ML',
+                        'description' => 'AGUA NEVADA 600 ML',
+                        'sku' => 'XPBOD2603000008',
+                        'familyId' => '2',
+                        'priceNet' => '1.72413793',
                     ],
                     [
                         'id' => '14',

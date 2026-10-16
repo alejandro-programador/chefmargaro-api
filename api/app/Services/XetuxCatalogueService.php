@@ -9,11 +9,18 @@ use RuntimeException;
 
 class XetuxCatalogueService
 {
+    /** @var array<string, mixed>|null */
+    protected ?array $fetchedCatalogue = null;
+
     /**
      * @return array{familyList: array, productList: array, categoryList: array, additionalCategoryByProductList: array, removibleIngredientList: array}
      */
     public function fetchCatalogue(): array
     {
+        if ($this->fetchedCatalogue !== null) {
+            return $this->fetchedCatalogue;
+        }
+
         $apiKey = config('xetux.api_key');
         if (empty($apiKey)) {
             throw new RuntimeException('XETUX_API_KEY no está configurada en el servidor.');
@@ -34,7 +41,83 @@ class XetuxCatalogueService
             throw new RuntimeException('Respuesta inválida del catálogo de Xetux.');
         }
 
-        return $this->normalizeCatalogue($payload);
+        return $this->fetchedCatalogue = $this->normalizeCatalogue($payload);
+    }
+
+    /**
+     * Precio de venta con IVA. El POS antiguo ya trae productSalePriceBaseWithTax.
+     * El gateway solo trae priceNet (base sin IVA).
+     *
+     * @param  array<string, mixed>  $product
+     */
+    public function salePriceFromRaw(array $product): float
+    {
+        $withTax = $product['productSalePriceBaseWithTax'] ?? null;
+        if ($withTax !== null && $withTax !== '') {
+            return round((float) $withTax, 2);
+        }
+
+        $net = (float) ($product['priceNet'] ?? 0);
+        $rate = (float) config('xetux.catalog_price_tax_rate', 0.16);
+
+        return round($net * (1 + $rate), 2);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $catalogue
+     */
+    public function salePriceForProductId(int $productId, ?array $catalogue = null): ?float
+    {
+        if ($productId <= 0) {
+            return null;
+        }
+
+        $catalogue ??= $this->fetchCatalogue();
+        foreach ($catalogue['productList'] ?? [] as $product) {
+            if ((int) ($product['productId'] ?? 0) !== $productId) {
+                continue;
+            }
+
+            return round((float) ($product['productSalePriceBaseWithTax'] ?? 0), 2);
+        }
+
+        return null;
+    }
+
+    /**
+     * Sustituye el precio guardado por el del catálogo (ya con IVA) para la tienda.
+     *
+     * @param  iterable<int, Extra>  $extras
+     */
+    public function applyDisplayedPrices(iterable $extras): void
+    {
+        $list = collect($extras)->filter(fn ($extra) => $extra instanceof Extra)->values();
+        if ($list->isEmpty()) {
+            return;
+        }
+
+        try {
+            $catalogue = $this->fetchCatalogue();
+        } catch (RuntimeException) {
+            return;
+        }
+
+        foreach ($list as $extra) {
+            if ($extra->isDrinkFamily()) {
+                $flavors = $this->flavorsForFamily((int) $extra->xetux_family_id, $catalogue);
+                $extra->flavorOptions = $flavors;
+                $min = collect($flavors)->min('price');
+                if ($min !== null) {
+                    $extra->price_eur = round((float) $min, 2);
+                }
+                continue;
+            }
+
+            $price = $this->salePriceForProductId((int) $extra->xetux_product_id, $catalogue);
+            if ($price !== null) {
+                $extra->price_eur = $price;
+            }
+        }
     }
 
     /**
@@ -84,11 +167,7 @@ class XetuxCatalogueService
                     'productName' => (string) ($product['name'] ?? $product['productName'] ?? ''),
                     'productDescription' => $product['description'] ?? $product['productDescription'] ?? null,
                     'familyId' => (int) ($product['familyId'] ?? 0),
-                    'productSalePriceBaseWithTax' => (float) (
-                        $product['productSalePriceBaseWithTax']
-                        ?? $product['priceNet']
-                        ?? 0
-                    ),
+                    'productSalePriceBaseWithTax' => $this->salePriceFromRaw($product),
                 ];
             })
             ->filter(fn ($product) => $product['productId'] > 0)
@@ -477,18 +556,20 @@ class XetuxCatalogueService
 
         $items = collect($catalogue['productList'] ?? [])
             ->filter(fn ($product) => (int) ($product['familyId'] ?? 0) === $familyId)
-            ->map(function ($product) {
+            ->map(function ($product) use ($familyId) {
                 $description = trim((string) ($product['productDescription'] ?? ''));
                 $name = trim((string) ($product['productName'] ?? ''));
                 $label = $description !== '' ? $description : $name;
                 $productId = (int) ($product['productId'] ?? 0);
+                $price = round((float) ($product['productSalePriceBaseWithTax'] ?? 0), 2);
+                $label = $this->drinkFlavorLabel($familyId, $label, $price, $productId);
 
                 return [
                     'product_id' => $productId,
                     'item_id' => (int) ($product['itemId'] ?? $productId),
-                    'label' => $label !== '' ? $label : 'Producto '.$productId,
+                    'label' => $label,
                     'sku' => trim((string) ($product['itemCode'] ?? '')),
-                    'price' => round((float) ($product['productSalePriceBaseWithTax'] ?? 0), 2),
+                    'price' => $price,
                 ];
             })
             ->filter(fn ($product) => $product['product_id'] > 0)
@@ -535,5 +616,27 @@ class XetuxCatalogueService
         }
 
         return null;
+    }
+
+    /**
+     * En Aguas, los productos a REF 2 siguen nombrados como Nevada 600 ml.
+     * Ese precio es el del agua gasificada de 1.5L (la de 600 ml queda en REF 1).
+     */
+    protected function drinkFlavorLabel(int $familyId, string $label, float $price, int $productId): string
+    {
+        $label = $label !== '' ? $label : 'Producto '.$productId;
+        if ($familyId !== 2 || abs($price - 2.0) > 0.02) {
+            return $label;
+        }
+
+        $normalized = strtoupper(strtr($label, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ñ' => 'N',
+            'á' => 'A', 'é' => 'E', 'í' => 'I', 'ó' => 'O', 'ú' => 'U', 'ñ' => 'N',
+        ]));
+        if (str_contains($normalized, 'GASIFIC')) {
+            return $label;
+        }
+
+        return 'Agua gasificada 1.5L';
     }
 }

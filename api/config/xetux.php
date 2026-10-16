@@ -33,5 +33,9 @@ return [
 
     'system_type_id' => 1,
     'payform_id' => 1,
-    'tax_rate' => 0.16,
+
+    // El precio de venta (portal y extras) ya incluye IVA. No se vuelve a sumar al enviar el pedido.
+    'tax_rate' => 0.0,
+    // priceNet del gateway es la base sin IVA. El precio de venta es priceNet × (1 + esta tasa).
+    'catalog_price_tax_rate' => 0.16,
 ];
