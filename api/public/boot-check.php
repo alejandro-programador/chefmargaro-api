@@ -9,7 +9,23 @@ if (($_GET['token'] ?? '') !== 'chefmargaro-boot-2026') {
 }
 
 echo 'php '.PHP_VERSION."\n";
-echo 'autoload '.(is_file(__DIR__.'/../vendor/autoload.php') ? 'yes' : 'NO')."\n";
+$autoload = __DIR__.'/../vendor/autoload.php';
+$zipPath = __DIR__.'/../vendor-restore.zip';
+echo 'autoload '.(is_file($autoload) ? 'yes' : 'NO')."\n";
+echo 'zip '.(is_file($zipPath) ? 'yes' : 'NO')."\n";
+echo 'ziparchive '.(class_exists('ZipArchive') ? 'yes' : 'NO')."\n";
+
+if (! is_file($autoload) && is_file($zipPath) && class_exists('ZipArchive')) {
+    $zip = new ZipArchive();
+    $opened = $zip->open($zipPath);
+    echo 'zip open '.var_export($opened, true)."\n";
+    if ($opened === true) {
+        $ok = $zip->extractTo(dirname(__DIR__));
+        $zip->close();
+        echo 'extracted '.var_export($ok, true)."\n";
+    }
+}
+echo 'autoload after '.(is_file($autoload) ? 'yes' : 'NO')."\n";
 echo 'disabled '.ini_get('disable_functions')."\n";
 
 $which = static function (string $command): string {
