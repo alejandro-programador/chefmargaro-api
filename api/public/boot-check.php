@@ -8,6 +8,17 @@ if (($_GET['token'] ?? '') !== 'chefmargaro-boot-2026') {
     exit;
 }
 
+if (($_GET['log'] ?? '') === '1') {
+    $log = __DIR__.'/../storage/logs/laravel.log';
+    if (! is_file($log)) {
+        echo 'no log';
+        exit;
+    }
+    $lines = file($log);
+    echo implode('', array_slice($lines, -40));
+    exit;
+}
+
 echo 'php '.PHP_VERSION."\n";
 $autoload = __DIR__.'/../vendor/autoload.php';
 $zipPath = __DIR__.'/../vendor-restore.zip';
