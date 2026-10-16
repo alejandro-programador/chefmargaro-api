@@ -10,6 +10,19 @@ if (($_GET['token'] ?? '') !== 'chefmargaro-boot-2026') {
 
 echo 'php '.PHP_VERSION."\n";
 echo 'autoload '.(is_file(__DIR__.'/../vendor/autoload.php') ? 'yes' : 'NO')."\n";
+echo 'disabled '.ini_get('disable_functions')."\n";
+
+$which = static function (string $command): string {
+    if (! function_exists('shell_exec')) {
+        return 'shell_exec disabled';
+    }
+    $out = shell_exec($command.' 2>&1');
+
+    return trim((string) $out);
+};
+
+echo "composer: ".$which('command -v composer || command -v composer.phar || true')."\n";
+echo "ls parent:\n".$which('ls -la '.__DIR__.'/..')."\n";
 
 try {
     require __DIR__.'/../vendor/autoload.php';
