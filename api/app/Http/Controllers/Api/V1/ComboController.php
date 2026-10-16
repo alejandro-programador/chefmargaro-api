@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 
 class ComboController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, XetuxCatalogueService $xetux)
     {
         $query = Combo::with('branch');
 
@@ -49,7 +49,10 @@ class ComboController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
-        return ComboResource::collection($query->paginate($perPage));
+        $combos = $query->paginate($perPage);
+        $xetux->applyDisplayedComboPrices($combos->getCollection());
+
+        return ComboResource::collection($combos);
     }
 
     public function store(Request $request, XetuxCatalogueService $xetux)
@@ -99,6 +102,7 @@ class ComboController extends Controller
             abort(404);
         }
         $combo->load(['branch', 'extras', 'includedGroups.products']);
+        $xetux->applyDisplayedComboPrices([$combo]);
         $xetux->applyDisplayedPrices($combo->extras);
         return new ComboResource($combo);
     }

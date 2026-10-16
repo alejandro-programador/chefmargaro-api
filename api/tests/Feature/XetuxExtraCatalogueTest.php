@@ -62,6 +62,27 @@ class XetuxExtraCatalogueTest extends TestCase
         ));
     }
 
+    public function test_web_price_uses_precise_net_and_xetux_price_uses_secondary(): void
+    {
+        $service = app(XetuxCatalogueService::class);
+
+        $product = [
+            'priceNet' => '1.72413793',
+            'priceNetSecondary' => '1.72',
+        ];
+
+        $this->assertSame(2.0, $service->salePriceFromRaw($product));
+        $this->assertSame(1.72, $service->netPriceFromRaw($product));
+
+        $shrimp = [
+            'priceNet' => '6.03448276',
+            'priceNetSecondary' => '6.03',
+        ];
+
+        $this->assertSame(7.0, $service->salePriceFromRaw($shrimp));
+        $this->assertSame(6.03, $service->netPriceFromRaw($shrimp));
+    }
+
     public function test_gateway_catalogue_maps_removable_ingredients(): void
     {
         Http::fake([

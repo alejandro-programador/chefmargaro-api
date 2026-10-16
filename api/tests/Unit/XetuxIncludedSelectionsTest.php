@@ -196,4 +196,64 @@ class XetuxIncludedSelectionsTest extends TestCase
         $this->assertStringContainsString('10 ROLL CAMARON - CANGREJO', $line['notes']);
         $this->assertStringContainsString('SOLO ATUN', $line['notes']);
     }
+
+    public function test_combo_topping_choice_is_sent_as_catalog_products(): void
+    {
+        $service = new XetuxOrderService(new XetuxCatalogueService);
+        $crunch = [
+            'id' => 87,
+            'name' => 'TOPPING DINAMITA 60 GR',
+            'description' => 'TOPPING CAMARON CRUNCH PICK UP 80 GRAMOS',
+            'sku' => 'XPRO2604000089',
+            'combo' => false,
+            'net_price' => 0,
+        ];
+        $dinamita = [
+            'id' => 54,
+            'name' => 'TOPPING DINAMITA 59 GR',
+            'description' => 'TOPPING DINAMITA 59 GR',
+            'sku' => 'XPRO2509000012',
+            'combo' => false,
+            'net_price' => 0,
+        ];
+
+        $line = $service->mapComboBodyLine([
+            'xetux_product_id' => 47,
+            'name' => 'Combo Full 50 Rolls',
+            'quantity' => 1,
+            'unit_price' => 29.31,
+            'combinaciones' => [
+                ['textura' => 'FRIOS', 'roll' => '10 ROLL CAMARON - CANGREJO', 'roll_product_id' => 39],
+                ['textura' => 'FRIOS', 'roll' => '10 ROLL CAMARON - CANGREJO', 'roll_product_id' => 39],
+                ['textura' => 'Topping', 'proteina' => '20 rolls con topping crunch y 30 con ensalada dinamita', 'complemento' => '—'],
+            ],
+            'rollsConSesamo' => '0',
+            'rollsConQuesoCremaCebollin' => '1',
+        ], [], [
+            'productsById' => [
+                47 => ['id' => 47, 'name' => 'COMBO FULL 50 ROLLS', 'sku' => 'XPROM', 'combo' => true],
+                39 => ['id' => 39, 'name' => '10 ROLL CAMARON - CANGREJO', 'sku' => 'XPRO', 'combo' => false],
+            ],
+            'additionalsByName' => [
+                'FRIOS' => ['id' => '1', 'name' => 'FRIOS', 'sku' => 'XMOD'],
+            ],
+            'categoryByAdditionalId' => [
+                '1' => ['id' => 1, 'name' => 'TEXTURA'],
+            ],
+            'promotions' => [
+                47 => [
+                    'rolls' => [['id' => 39, 'name' => '10 ROLL CAMARON - CANGREJO', 'sku' => 'XPRO', 'combo' => false]],
+                    'sauces' => [],
+                    'drinks' => [],
+                    'toppings' => [$crunch, $dinamita],
+                ],
+            ],
+        ]);
+
+        $products = collect($line['products']);
+        $this->assertSame(2, $products->where('id', 87)->first()['quantity']);
+        $this->assertSame(3, $products->where('id', 54)->first()['quantity']);
+        $this->assertStringContainsString('Sin sésamo.', $products->first()['notes']);
+        $this->assertStringContainsString('Con cebollín y queso crema.', $line['notes']);
+    }
 }

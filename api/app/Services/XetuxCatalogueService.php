@@ -45,22 +45,58 @@ class XetuxCatalogueService
     }
 
     /**
-     * Precio de venta con IVA. El POS antiguo ya trae productSalePriceBaseWithTax.
-     * El gateway solo trae priceNet (base sin IVA).
+     * Base del catálogo sin IVA. Xetux debe recibir priceNetSecondary, no el precio con IVA.
+     *
+     * @param  array<string, mixed>  $product
+     */
+    public function netPriceFromRaw(array $product): float
+    {
+        $secondary = $product['priceNetSecondary'] ?? null;
+        if ($secondary !== null && $secondary !== '' && (float) $secondary > 0) {
+            return round((float) $secondary, 2);
+        }
+
+        $net = $product['priceNet'] ?? null;
+        if ($net !== null && $net !== '' && (float) $net > 0) {
+            return round((float) $net, 2);
+        }
+
+        $withTax = $product['productSalePriceBaseWithTax'] ?? null;
+        if ($withTax !== null && $withTax !== '' && (float) $withTax > 0) {
+            $rate = (float) config('xetux.catalog_price_tax_rate', 0.16);
+
+            return round(((float) $withTax) / (1 + $rate), 2);
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Precio de venta con IVA para la web.
+     * priceNet trae la base a precisión completa (7 / 1.16) y así el REF queda exacto (2, 7, 22).
+     * Si solo existe priceNetSecondary, se usa esa base redondeada.
      *
      * @param  array<string, mixed>  $product
      */
     public function salePriceFromRaw(array $product): float
     {
+        $rate = (float) config('xetux.catalog_price_tax_rate', 0.16);
+        $precise = $product['priceNet'] ?? null;
+        if ($precise !== null && $precise !== '' && (float) $precise > 0) {
+            return round((float) $precise * (1 + $rate), 2);
+        }
+
+        $secondary = $product['priceNetSecondary'] ?? null;
+        if ($secondary !== null && $secondary !== '' && (float) $secondary > 0) {
+            return round((float) $secondary * (1 + $rate), 2);
+        }
+
         $withTax = $product['productSalePriceBaseWithTax'] ?? null;
         if ($withTax !== null && $withTax !== '') {
             return round((float) $withTax, 2);
         }
 
-        $net = (float) ($product['priceNet'] ?? 0);
-        $rate = (float) config('xetux.catalog_price_tax_rate', 0.16);
-
-        return round($net * (1 + $rate), 2);
+        return 0.0;
     }
 
     /**
@@ -79,6 +115,33 @@ class XetuxCatalogueService
             }
 
             return round((float) ($product['productSalePriceBaseWithTax'] ?? 0), 2);
+        }
+
+        return null;
+    }
+
+    /**
+     * Base sin IVA (priceNetSecondary) para enviar el producto a Xetux.
+     *
+     * @param  array<string, mixed>|null  $catalogue
+     */
+    public function netPriceForProductId(int $productId, ?array $catalogue = null): ?float
+    {
+        if ($productId <= 0) {
+            return null;
+        }
+
+        $catalogue ??= $this->fetchCatalogue();
+        foreach ($catalogue['productList'] ?? [] as $product) {
+            if ((int) ($product['productId'] ?? 0) !== $productId) {
+                continue;
+            }
+
+            if (array_key_exists('productSalePriceNet', $product) && $product['productSalePriceNet'] !== null && $product['productSalePriceNet'] !== '') {
+                return round((float) $product['productSalePriceNet'], 2);
+            }
+
+            return $this->netPriceFromRaw($product);
         }
 
         return null;
@@ -114,8 +177,34 @@ class XetuxCatalogueService
             }
 
             $price = $this->salePriceForProductId((int) $extra->xetux_product_id, $catalogue);
-            if ($price !== null) {
+            if ($price !== null && $price > 0) {
                 $extra->price_eur = $price;
+            }
+        }
+    }
+
+    /**
+     * El precio publicado del combo es el del catálogo (base + IVA), no el guardado en la BD.
+     *
+     * @param  iterable<int, Combo>  $combos
+     */
+    public function applyDisplayedComboPrices(iterable $combos): void
+    {
+        $list = collect($combos)->filter(fn ($combo) => $combo instanceof Combo)->values();
+        if ($list->isEmpty()) {
+            return;
+        }
+
+        try {
+            $catalogue = $this->fetchCatalogue();
+        } catch (RuntimeException) {
+            return;
+        }
+
+        foreach ($list as $combo) {
+            $price = $this->salePriceForProductId((int) $combo->xetux_product_id, $catalogue);
+            if ($price !== null && $price > 0) {
+                $combo->price_eur = $price;
             }
         }
     }
@@ -167,6 +256,7 @@ class XetuxCatalogueService
                     'productName' => (string) ($product['name'] ?? $product['productName'] ?? ''),
                     'productDescription' => $product['description'] ?? $product['productDescription'] ?? null,
                     'familyId' => (int) ($product['familyId'] ?? 0),
+                    'productSalePriceNet' => $this->netPriceFromRaw($product),
                     'productSalePriceBaseWithTax' => $this->salePriceFromRaw($product),
                 ];
             })
@@ -561,6 +651,7 @@ class XetuxCatalogueService
                 $name = trim((string) ($product['productName'] ?? ''));
                 $label = $description !== '' ? $description : $name;
                 $productId = (int) ($product['productId'] ?? 0);
+                $net = round((float) ($product['productSalePriceNet'] ?? $this->netPriceFromRaw($product)), 2);
                 $price = round((float) ($product['productSalePriceBaseWithTax'] ?? 0), 2);
                 $label = $this->drinkFlavorLabel($familyId, $label, $price, $productId);
 
@@ -570,11 +661,26 @@ class XetuxCatalogueService
                     'label' => $label,
                     'sku' => trim((string) ($product['itemCode'] ?? '')),
                     'price' => $price,
+                    'net_price' => $net,
                 ];
             })
             ->filter(fn ($product) => $product['product_id'] > 0)
             ->unique('product_id')
             ->values();
+
+        $items = $items->reject(function ($item) use ($items) {
+            if (! str_starts_with((string) $item['sku'], 'XPBOD')) {
+                return false;
+            }
+            $label = $this->normalizeCatalogLabel((string) $item['label']);
+
+            return $items->contains(function ($other) use ($item, $label) {
+                return (int) $other['product_id'] !== (int) $item['product_id']
+                    && str_starts_with((string) $other['sku'], 'XPROD')
+                    && $this->normalizeCatalogLabel((string) $other['label']) === $label
+                    && (float) $other['price'] > (float) $item['price'] + 0.001;
+            });
+        })->values();
 
         $counts = $items->countBy('label');
 
@@ -592,6 +698,7 @@ class XetuxCatalogueService
                     'name' => $label,
                     'sku' => $item['sku'],
                     'price' => $item['price'],
+                    'net_price' => $item['net_price'],
                 ];
             })
             ->sortBy('name')

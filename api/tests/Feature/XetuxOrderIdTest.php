@@ -63,10 +63,46 @@ class XetuxOrderIdTest extends TestCase
         $this->assertEquals(7, $sent['subtotal']);
         $this->assertEquals(0, $sent['tax']);
         $this->assertEquals(7, $sent['total']);
-        $this->assertStringContainsString('Hacer el roll sin cebollín ni queso crema.', $sent['notes']);
-        $this->assertStringContainsString('Roll frío sin sésamo.', $sent['notes']);
-        $this->assertStringContainsString('Hacer el roll sin cebollín ni queso crema.', $sent['body'][0]['notes']);
-        $this->assertStringContainsString('Roll frío sin sésamo.', $sent['body'][0]['notes']);
+        $this->assertStringContainsString('Sin cebollín y queso crema.', $sent['notes']);
+        $this->assertStringContainsString('Sin sésamo.', $sent['notes']);
+        $this->assertStringContainsString('Sin cebollín y queso crema.', $sent['body'][0]['notes']);
+        $this->assertStringContainsString('Sin sésamo.', $sent['body'][0]['notes']);
+    }
+
+    public function test_roll_notes_accept_checkbox_values_sent_as_strings(): void
+    {
+        config(['xetux.api_key' => null]);
+
+        $order = new Order(['total_amount' => 8]);
+        $order->order_id = 15;
+        $customer = new Customer(['name' => 'Ana Perez', 'email' => 'ana@example.com']);
+        $customer->customer_id = 3;
+
+        $with = app(XetuxOrderService::class)->buildPayload($order, $customer, [[
+            'type' => 'combo',
+            'name' => 'Combo Individual',
+            'xetux_product_id' => 48,
+            'quantity' => 1,
+            'unit_price' => 8,
+            'combinaciones' => [],
+            'rollsConQuesoCremaCebollin' => '1',
+            'rollsConSesamo' => '1',
+        ]]);
+        $without = app(XetuxOrderService::class)->buildPayload($order, $customer, [[
+            'type' => 'combo',
+            'name' => 'Combo Individual',
+            'xetux_product_id' => 48,
+            'quantity' => 1,
+            'unit_price' => 8,
+            'combinaciones' => [],
+            'rollsConQuesoCremaCebollin' => '0',
+            'rollsConSesamo' => '0',
+        ]]);
+
+        $this->assertStringContainsString('Con sésamo.', $with['orders'][0]['notes']);
+        $this->assertStringContainsString('Con cebollín y queso crema.', $with['orders'][0]['notes']);
+        $this->assertStringContainsString('Sin sésamo.', $without['orders'][0]['notes']);
+        $this->assertStringContainsString('Sin cebollín y queso crema.', $without['orders'][0]['notes']);
     }
 
     private function xetuxOrderId(int $localOrderId): int

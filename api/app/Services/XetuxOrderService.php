@@ -29,7 +29,10 @@ class XetuxOrderService
         $xetuxOrderId = $this->generateXetuxOrderId($order->order_id);
         $tracking = $this->generateTrackingCode();
         $createdAt = now()->getTimestampMs();
-        $subtotal = round((float) $order->total_amount, 2);
+        $body = $this->buildBodyLines($cartLines, $this->promotionContext());
+        $subtotal = round(collect($body)->sum(function ($line) {
+            return round((float) ($line['price'] ?? 0) * max(1, (int) ($line['quantity'] ?? 1)), 2);
+        }), 2);
         $tax = 0.0;
         $total = $subtotal;
 
@@ -87,7 +90,7 @@ class XetuxOrderService
                     'totalDiscount' => 0.0,
                     'tip' => 0.0,
                     'shippingCost' => 0.0,
-                    'body' => $this->buildBodyLines($cartLines, $this->promotionContext()),
+                    'body' => $body,
                     'paid' => false,
                     'billed' => false,
                 ],
@@ -491,10 +494,6 @@ class XetuxOrderService
                 continue;
             }
             if ($this->normalizeLabel((string) ($row['textura'] ?? '')) === 'TOPPING') {
-                $topping = $this->matchNamedProduct($groups['toppings'], (string) ($row['proteina'] ?? ''));
-                if ($topping) {
-                    $nested[] = $this->nestedCatalogProduct($topping, 1, 0);
-                }
                 continue;
             }
 
@@ -503,6 +502,10 @@ class XetuxOrderService
                 continue;
             }
             $line = $this->nestedCatalogProduct($roll, (int) ($comboLine['quantity'] ?? 1), 0);
+            $preferenceNotes = implode(' ', $this->rollPreferencePhrases($comboLine));
+            if ($preferenceNotes !== '') {
+                $line['notes'] = $preferenceNotes;
+            }
             $additionals = [];
             $modifierFields = ['textura', 'complemento'];
             if ($this->combinationUsesProteinAdditional($roll, $row)) {
@@ -518,6 +521,15 @@ class XetuxOrderService
                 $line['additionals'] = $additionals;
             }
             $nested[] = $line;
+        }
+
+        $comboQty = max(1, (int) ($comboLine['quantity'] ?? 1));
+        foreach ($this->toppingSelections($comboLine, $groups['toppings'] ?? []) as $selection) {
+            $nested[] = $this->nestedCatalogProduct(
+                $selection['product'],
+                $selection['quantity'] * $comboQty,
+                round((float) ($selection['product']['net_price'] ?? 0), 2)
+            );
         }
 
         foreach ($comboLine['included_sauces'] ?? [] as $sauce) {
@@ -588,7 +600,8 @@ class XetuxOrderService
     }
 
     /**
-     * Avisos de cocina: roll frío con o sin sésamo, y roll sin queso crema ni cebollín.
+     * Avisos de cocina: con o sin sésamo, y con o sin cebollín y queso crema.
+     * El checkout manda estos flags como "1"/"0"; un string no vacío es truthy en PHP.
      *
      * @param  array<string, mixed>  $comboLine
      * @return array<int, string>
@@ -596,19 +609,179 @@ class XetuxOrderService
     protected function rollPreferencePhrases(array $comboLine): array
     {
         $extra = [];
-        if (array_key_exists('rollsConSesamo', $comboLine) && $comboLine['rollsConSesamo'] !== null) {
-            $extra[] = $comboLine['rollsConSesamo']
-                ? 'Roll frío con sésamo.'
-                : 'Roll frío sin sésamo.';
+        $sesamo = $this->preferenceBool($comboLine, 'rollsConSesamo');
+        if ($sesamo !== null) {
+            $extra[] = $sesamo ? 'Con sésamo.' : 'Sin sésamo.';
         }
-        if (
-            array_key_exists('rollsConQuesoCremaCebollin', $comboLine)
-            && $comboLine['rollsConQuesoCremaCebollin'] === false
-        ) {
-            $extra[] = 'Hacer el roll sin cebollín ni queso crema.';
+        $cebollin = $this->preferenceBool($comboLine, 'rollsConQuesoCremaCebollin');
+        if ($cebollin !== null) {
+            $extra[] = $cebollin
+                ? 'Con cebollín y queso crema.'
+                : 'Sin cebollín y queso crema.';
         }
 
         return $extra;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    protected function preferenceBool(array $line, string $key): ?bool
+    {
+        if (! array_key_exists($key, $line) || $line[$key] === null || $line[$key] === '') {
+            return null;
+        }
+
+        $value = $line[$key];
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value) || is_float($value)) {
+            return (int) $value === 1;
+        }
+
+        $text = strtolower(trim((string) $value));
+        if (in_array($text, ['1', 'true', 'si', 'sí', 'yes'], true)) {
+            return true;
+        }
+        if (in_array($text, ['0', 'false', 'no'], true)) {
+            return false;
+        }
+
+        return null;
+    }
+
+    /**
+     * La sección Topping de la web elige crunch y/o ensalada dinamita.
+     * Cada 10 rolls corresponden a un producto de la promoción TOPPING Y RACIONES.
+     *
+     * @param  array<string, mixed>  $comboLine
+     * @param  array<int, array<string, mixed>>  $toppingProducts
+     * @return array<int, array{product: array<string, mixed>, quantity: int}>
+     */
+    protected function toppingSelections(array $comboLine, array $toppingProducts): array
+    {
+        $label = '';
+        foreach ($comboLine['combinaciones'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if ($this->normalizeLabel((string) ($row['textura'] ?? '')) !== 'TOPPING') {
+                continue;
+            }
+            $label = trim((string) ($row['proteina'] ?? $row['product_name'] ?? ''));
+            break;
+        }
+        if ($label === '' || $toppingProducts === []) {
+            return [];
+        }
+
+        $crunch = null;
+        $dinamita = null;
+        foreach ($toppingProducts as $product) {
+            $description = $this->normalizeLabel((string) ($product['description'] ?? ''));
+            $name = $this->normalizeLabel((string) ($product['name'] ?? ''));
+            $text = trim($description.' '.$name);
+            if ($text === '') {
+                continue;
+            }
+            if (str_contains($text, 'CRUNCH')) {
+                $crunch = $product;
+                continue;
+            }
+            if (str_contains($text, 'POLLO')) {
+                continue;
+            }
+            if (str_contains($description !== '' ? $description : $name, 'DINAMITA')) {
+                $dinamita = $product;
+            }
+        }
+
+        $normalized = $this->normalizeLabel($label);
+        $pieces = $this->rollPieceCount($comboLine);
+        $selections = [];
+
+        if (str_contains($normalized, 'TODOS') && str_contains($normalized, 'CRUNCH') && $crunch) {
+            $selections[] = ['product' => $crunch, 'quantity' => max(1, $pieces)];
+
+            return $selections;
+        }
+
+        if (preg_match('/(\d+)\s+ROLLS?\s+CON\s+TOPPING\s+CRUNCH/', $normalized, $crunchMatch) && $crunch) {
+            $selections[] = [
+                'product' => $crunch,
+                'quantity' => max(1, (int) round(((int) $crunchMatch[1]) / 10)),
+            ];
+        }
+        if (preg_match('/(\d+)\s+(?:ROLLS?\s+)?CON\s+ENSALADA\s+DINAMITA/', $normalized, $dinamitaMatch) && $dinamita) {
+            $selections[] = [
+                'product' => $dinamita,
+                'quantity' => max(1, (int) round(((int) $dinamitaMatch[1]) / 10)),
+            ];
+        }
+        if ($selections === [] && str_contains($normalized, 'DINAMITA') && ! str_contains($normalized, 'CRUNCH') && $dinamita) {
+            $selections[] = ['product' => $dinamita, 'quantity' => 1];
+        }
+        if ($selections === [] && str_contains($normalized, 'CRUNCH') && $crunch) {
+            $selections[] = ['product' => $crunch, 'quantity' => 1];
+        }
+
+        return $selections;
+    }
+
+    /**
+     * @param  array<string, mixed>  $comboLine
+     */
+    protected function rollPieceCount(array $comboLine): int
+    {
+        $pieces = 0;
+        foreach ($comboLine['combinaciones'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $kind = (string) ($row['kind'] ?? '');
+            if (in_array($kind, ['sauce', 'drink', 'roll_preferences'], true)) {
+                continue;
+            }
+            if ($this->normalizeLabel((string) ($row['textura'] ?? '')) === 'TOPPING') {
+                continue;
+            }
+            $pieces++;
+        }
+
+        return max(1, $pieces);
+    }
+
+    /**
+     * El recargo de "todos con crunch" está en el precio de la web (ya con IVA).
+     * A Xetux se suma solo la base de ese recargo.
+     *
+     * @param  array<string, mixed>  $comboLine
+     */
+    protected function toppingSurchargeNet(array $comboLine): float
+    {
+        $gross = 0.0;
+        foreach ($comboLine['combinaciones'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if ($this->normalizeLabel((string) ($row['textura'] ?? '')) !== 'TOPPING') {
+                continue;
+            }
+            $complemento = (string) ($row['complemento'] ?? '');
+            $label = (string) ($row['proteina'] ?? '');
+            $source = preg_match('/€|eur/iu', $complemento) ? $complemento : $label;
+            if (preg_match('/(\d+(?:[.,]\d+)?)\s*(?:€|eur)/iu', $source, $match)) {
+                $gross += (float) str_replace(',', '.', $match[1]);
+            }
+        }
+        if ($gross <= 0) {
+            return 0.0;
+        }
+
+        $rate = (float) config('xetux.catalog_price_tax_rate', 0.16);
+
+        return round($gross / (1 + $rate), 2);
     }
 
     /**
@@ -875,8 +1048,10 @@ class XetuxOrderService
             $productsById[$id] = [
                 'id' => $id,
                 'name' => (string) ($product['name'] ?? ''),
+                'description' => (string) ($product['description'] ?? ''),
                 'sku' => (string) ($product['sku'] ?? ''),
                 'combo' => filter_var($product['combo'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'net_price' => round((float) ($product['priceNetSecondary'] ?? $product['priceNet'] ?? 0), 2),
             ];
         }
 
@@ -1008,6 +1183,18 @@ class XetuxOrderService
                     if (is_string($combo->name) && $combo->name !== '') {
                         $line['name'] = $combo->name;
                     }
+                    $net = $this->catalogNetPrice((int) $combo->xetux_product_id);
+                    if ($net !== null && $net > 0) {
+                        $line['unit_price'] = round($net + $this->toppingSurchargeNet($line), 2);
+                    }
+                }
+                foreach (['rollsConSesamo', 'rollsConQuesoCremaCebollin'] as $preferenceKey) {
+                    $flag = $this->preferenceBool($line, $preferenceKey);
+                    if ($flag === null) {
+                        unset($line[$preferenceKey]);
+                    } else {
+                        $line[$preferenceKey] = $flag;
+                    }
                 }
                 $line['combinaciones'] = $this->mergeIncludedSelections(
                     is_array($line['combinaciones'] ?? null) ? $line['combinaciones'] : [],
@@ -1022,8 +1209,8 @@ class XetuxOrderService
                 } elseif ($extra) {
                     $line['xetux_product_id'] = $extra->xetux_product_id;
                     $line['xetux_item_id'] = $extra->xetux_item_id;
-                    $catalogPrice = $this->catalogSalePrice((int) $extra->xetux_product_id);
-                    if ($catalogPrice !== null) {
+                    $catalogPrice = $this->catalogNetPrice((int) $extra->xetux_product_id);
+                    if ($catalogPrice !== null && $catalogPrice > 0) {
                         $line['unit_price'] = $catalogPrice;
                     }
                 }
@@ -1171,7 +1358,10 @@ class XetuxOrderService
             $line['xetux_product_id'] = (int) $flavor['product_id'];
             $line['xetux_item_id'] = (int) $flavor['item_id'];
             $line['name'] = trim($title.' — '.$flavor['name']);
-            $line['unit_price'] = (float) $flavor['price'];
+            $net = $flavor['net_price'] ?? null;
+            $line['unit_price'] = $net !== null && (float) $net > 0
+                ? round((float) $net, 2)
+                : round((float) ($flavor['price'] ?? 0), 2);
         }
 
         $line['flavor'] = [
@@ -1267,14 +1457,14 @@ class XetuxOrderService
         return [$combinaciones, $sauces, $drink, $preferences];
     }
 
-    protected function catalogSalePrice(int $productId): ?float
+    protected function catalogNetPrice(int $productId): ?float
     {
         if ($productId <= 0) {
             return null;
         }
 
         try {
-            return $this->catalogue->salePriceForProductId($productId);
+            return $this->catalogue->netPriceForProductId($productId);
         } catch (RuntimeException) {
             return null;
         }

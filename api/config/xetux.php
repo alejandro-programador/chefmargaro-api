@@ -34,8 +34,8 @@ return [
     'system_type_id' => 1,
     'payform_id' => 1,
 
-    // El precio de venta (portal y extras) ya incluye IVA. No se vuelve a sumar al enviar el pedido.
+    // El portal muestra la base del catálogo + IVA. A Xetux se envía la base, sin volver a sumar IVA.
     'tax_rate' => 0.0,
-    // priceNet del gateway es la base sin IVA. El precio de venta es priceNet × (1 + esta tasa).
+    // priceNet es la base sin IVA a precisión completa. priceNetSecondary es esa misma base redondeada.
     'catalog_price_tax_rate' => 0.16,
 ];

@@ -92,7 +92,7 @@ class DrinkFamilyExtraTest extends TestCase
 
         $this->assertSame(2, $body[0]['product']['id']);
         $this->assertSame('AGUA MINALBA 600ML', $body[0]['product']['name']);
-        $this->assertSame(1.0, $body[0]['price']);
+        $this->assertEquals(0.86, $body[0]['price']);
     }
 
     public function test_flavor_from_another_family_is_rejected(): void
