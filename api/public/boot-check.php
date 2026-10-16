@@ -14,6 +14,34 @@ $zipPath = __DIR__.'/../vendor-restore.zip';
 echo 'autoload '.(is_file($autoload) ? 'yes' : 'NO')."\n";
 echo 'zip '.(is_file($zipPath) ? 'yes' : 'NO')."\n";
 echo 'ziparchive '.(class_exists('ZipArchive') ? 'yes' : 'NO')."\n";
+echo 'curl '.(function_exists('curl_init') ? 'yes' : 'NO')."\n";
+echo 'fopen wrappers '.(ini_get('allow_url_fopen') ? 'yes' : 'NO')."\n";
+
+if (! is_file($zipPath)) {
+    $url = 'https://github.com/alejandro-programador/chefmargaro-api/raw/861a463ee40a18fa5912d6f8679ae6717ceff705/api/vendor-restore.zip';
+    $downloaded = false;
+    if (function_exists('curl_init')) {
+        $fp = fopen($zipPath, 'w');
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_FILE => $fp,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 180,
+            CURLOPT_USERAGENT => 'chefmargaro-restore',
+        ]);
+        $downloaded = curl_exec($ch) === true && curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200;
+        echo 'curl http '.curl_getinfo($ch, CURLINFO_HTTP_CODE).' err '.curl_error($ch)."\n";
+        curl_close($ch);
+        fclose($fp);
+    } elseif (ini_get('allow_url_fopen')) {
+        $downloaded = @copy($url, $zipPath);
+        echo 'copy '.var_export($downloaded, true)."\n";
+    }
+    if (! $downloaded && is_file($zipPath) && filesize($zipPath) < 1000) {
+        unlink($zipPath);
+    }
+    echo 'zip after download '.(is_file($zipPath) ? filesize($zipPath) : 'NO')."\n";
+}
 
 if (! is_file($autoload) && is_file($zipPath) && class_exists('ZipArchive')) {
     $zip = new ZipArchive();
