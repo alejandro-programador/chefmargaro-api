@@ -8,6 +8,46 @@ if (($_GET['token'] ?? '') !== 'chefmargaro-boot-2026') {
     exit;
 }
 
+$index = __DIR__.'/index.php';
+if (! is_file($index) || filesize($index) < 80) {
+    file_put_contents($index, <<<'PHP'
+<?php
+
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
+
+define('LARAVEL_START', microtime(true));
+
+if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
+    require $maintenance;
+}
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
+
+$app->handleRequest(Request::capture());
+
+PHP);
+    echo "restored index.php\n";
+}
+
+if (($_GET['stat'] ?? '') === '1') {
+    foreach ([
+        'index.php' => __DIR__.'/index.php',
+        'htaccess' => __DIR__.'/.htaccess',
+        'autoload' => __DIR__.'/../vendor/autoload.php',
+        'routes' => __DIR__.'/../routes/api.php',
+        'order-service' => __DIR__.'/../app/Services/XetuxOrderService.php',
+        'catalogue' => __DIR__.'/../app/Services/XetuxCatalogueService.php',
+        'checkout' => __DIR__.'/../app/Http/Controllers/Api/V1/CheckoutOrderController.php',
+    ] as $label => $path) {
+        echo $label.' '.(is_file($path) ? 'yes '.filesize($path) : 'NO')."\n";
+    }
+    exit;
+}
+
 if (($_GET['log'] ?? '') === '1') {
     $log = __DIR__.'/../storage/logs/laravel.log';
     if (! is_file($log)) {

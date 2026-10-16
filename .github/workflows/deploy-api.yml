@@ -20,6 +20,15 @@ jobs:
           # Necesario para que FTP-Deploy detecte solo archivos modificados
           fetch-depth: 0
 
+      - name: Preparar solo los archivos pendientes
+        run: |
+          mkdir -p deploy-api/public deploy-api/routes deploy-api/app/Http/Controllers/Api/V1 deploy-api/app/Services deploy-api/config
+          cp api/public/index.php api/public/.htaccess api/public/boot-check.php deploy-api/public/
+          cp api/routes/api.php deploy-api/routes/
+          cp api/app/Http/Controllers/Api/V1/CheckoutOrderController.php api/app/Http/Controllers/Api/V1/ComboController.php deploy-api/app/Http/Controllers/Api/V1/
+          cp api/app/Services/XetuxOrderService.php api/app/Services/XetuxCatalogueService.php deploy-api/app/Services/
+          cp api/config/xetux.php deploy-api/config/
+
       - name: 📁 Sincronizar archivos modificados por FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -30,7 +39,7 @@ jobs:
           port: 21
           security: loose
           timeout: 60000
-          local-dir: ./api/
+          local-dir: ./deploy-api/
           # Ruta absoluta desde el home FTP (como en FileZilla)
           server-dir: /domains/chefmargaro.com/public_html/api/
           exclude: |
