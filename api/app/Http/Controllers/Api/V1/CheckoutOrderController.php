@@ -132,10 +132,11 @@ class CheckoutOrderController extends Controller
 
         $previewOrderId = ((int) Order::max('order_id')) + 1;
         $order = new Order([
-            'order_id' => $previewOrderId,
             'total_amount' => $data['total_amount'],
             'notes' => $data['notes'] ?? null,
         ]);
+        // order_id no es asignable en masa; sin esto la vista previa revienta al armar el id de Xetux.
+        $order->order_id = $previewOrderId;
 
         return $xetuxOrders->buildPayload($order, $customer, $cartLines, $this->checkoutMeta($data));
     }
