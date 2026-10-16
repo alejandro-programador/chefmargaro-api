@@ -14,8 +14,9 @@ if (($_GET['log'] ?? '') === '1') {
         echo 'no log';
         exit;
     }
-    $lines = file($log);
-    echo implode('', array_slice($lines, -40));
+    $text = file_get_contents($log);
+    $pos = strrpos($text, 'production.ERROR');
+    echo $pos === false ? substr($text, -4000) : substr($text, $pos, 2500);
     exit;
 }
 
